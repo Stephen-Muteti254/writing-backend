@@ -72,7 +72,7 @@ def create_writer_application(user, form_data, files):
     )
 
     db.session.add(application)
-    user.application_status = "pending"
+    user.application_status = "applied"
     db.session.commit()
 
     return application

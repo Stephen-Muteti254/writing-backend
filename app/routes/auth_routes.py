@@ -18,7 +18,7 @@ def register():
     country = data.get("country")
     phone = data.get("phone")
 
-    if not role in ("client", "pending_writer"):
+    if not role in ("client", "writer"):
         return error_response("VALIDATION_ERROR", f"Could not register {role}", status=403)
 
     if not all([full_name, email, password]):
@@ -91,14 +91,33 @@ def me():
     user = User.query.get(uid)
     if not user:
         return error_response("NOT_FOUND", "User not found", status=404)
-    return success_response({
-        "id": user.id,
-        "email": user.email,
-        "full_name": user.full_name,
-        "role": user.role,
-        "profile_image": user.profile_image,
-        "rating": user.rating,
-        "bio": user.bio,
-        "completed_orders": user.completed_orders,
-        "total_earned": user.total_earned
-    })
+
+    return success_response(user.to_dict())
+
+
+@auth_bp.route("/verify-email", methods=["POST"])
+def verify_email():
+    token = request.json.get("token")
+
+    if not token:
+        return jsonify({"error": "Missing token"}), 400
+
+    try:
+        user_id = decode_email_verification_token(token)
+        user = User.query.get(user_id)
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        if user.is_verified:
+            return jsonify({"verified": True}), 200
+
+        user.is_verified = True
+        db.session.commit()
+
+        return jsonify({"verified": True}), 200
+
+    except Exception:
+        return jsonify({
+            "error": "Invalid or expired verification link"
+        }), 400

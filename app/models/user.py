@@ -37,5 +37,8 @@ class User(db.Model):
             "bio": self.bio,
             "total_earned": self.total_earned,
             "country": self.country,
-            "joined_at": self.joined_at.isoformat() + "Z" if self.joined_at else None
+            "joined_at": self.joined_at.isoformat() + "Z" if self.joined_at else None,
+            "is_verified": self.is_verified,
+            "account_status": self.account_status,
+            "application_status": self.application_status,
         }

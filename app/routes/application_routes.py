@@ -25,14 +25,7 @@ def apply_writer():
 
     try:
         form_data = request.form.to_dict()
-        # print(f"received data = {form_data}")
         files = request.files
-
-        # print("Form keys:", list(request.form.keys()))
-        # print("File keys:", list(request.files.keys()))
-        # print("Files received:")
-        # for key, file in request.files.items():
-        #     print(f"  - {key}: {file.filename} ({file.content_type}, {file.content_length} bytes)")
 
         app = create_writer_application(user, form_data, files)
         return success_response({
@@ -181,7 +174,7 @@ def approve_application(application_id):
     if not app:
         return error_response("NOT_FOUND", "Application not found", status=404)
 
-    if app.status in ["awaiting_initial_deposit", "approved", "rejected"]:
+    if app.status in ["awaiting_initial_deposit", "paid_initial_deposit", "approved", "rejected"]:
         return error_response("INVALID_STATUS", "Application has already been processed", status=400)
 
     data = request.get_json() or {}
