@@ -95,7 +95,7 @@ def me():
     return success_response(user.to_dict())
 
 
-@auth_bp.route("/verify-email", methods=["POST"])
+@bp.route("/verify-email", methods=["POST"])
 def verify_email():
     token = request.json.get("token")
 

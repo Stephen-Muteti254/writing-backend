@@ -14,9 +14,11 @@ class Config:
     ACCESS_EXPIRES = int(os.getenv("ACCESS_EXPIRES", 86400))
     REFRESH_EXPIRES = int(os.getenv("REFRESH_EXPIRES", 86400))
     basedir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
     UPLOAD_FOLDER = os.path.join(basedir, "uploads/applications")
     ORDERS_FOLDER = os.path.join(basedir, "uploads/orders")
     SUBMISSIONS_FOLDER = os.path.join(basedir, "uploads/submissions")
+    SUPPORT_UPLOADS_FOLDER = os.path.join(basedir, "uploads/support_chats")
 
 class DevelopmentConfig(Config):
     DEBUG = True

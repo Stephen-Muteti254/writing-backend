@@ -43,6 +43,7 @@ def create_app(config_name=None):
     from app.routes.admin_writers import bp as admin_writers_bp
     from app.routes.user_routes import bp as user_bp
     from app.routes.submission_routes import bp as submission_bp
+    from app.routes.support_chat_routes import bp as support_chat_bp
 
     # available orders optional
     try:
@@ -65,6 +66,7 @@ def create_app(config_name=None):
     app.register_blueprint(admin_writers_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(submission_bp)
+    app.register_blueprint(support_chat_bp)
 
     # error handlers to match required error format
     from app.utils.response_formatter import error_response
