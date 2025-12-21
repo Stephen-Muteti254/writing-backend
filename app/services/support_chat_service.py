@@ -2,6 +2,10 @@ from app.extensions import db
 from app.models.support_chat import SupportChat
 from app.models.support_message import SupportMessage
 from app.services.chat_service import sanitize_message
+from flask import current_app
+import os
+import uuid
+from werkzeug.utils import secure_filename
 
 def save_support_file(file, chat_id, message_id):
     # Root directory

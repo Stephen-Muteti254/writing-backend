@@ -294,13 +294,6 @@ def serve_file(filename):
         if not safe_path.startswith(os.path.abspath(upload_folder)):
             return error_response("FORBIDDEN", "Invalid file path", status=403)
 
-        # print("========== FILE DEBUG ==========")
-        # print(f"UPLOAD_FOLDER: {upload_folder}")
-        # print(f"Requested filename: {filename}")
-        # print(f"Resolved safe_path: {safe_path}")
-        # print(f"File exists: {os.path.exists(safe_path)}")
-        # print("================================")
-
         if not os.path.exists(safe_path):
             return error_response("NOT_FOUND", "File not found", status=404)
 
@@ -322,3 +315,50 @@ def serve_file(filename):
     except Exception as e:
         # print(f"File serving error: {e}")
         return error_response("FILE_ERROR", str(e), status=500)
+
+
+# ------------------------------------------
+# 5. CONFIRM INITIAL DEPOSIT (ADMIN)
+# ------------------------------------------
+@bp.route("/<string:application_id>/confirm-deposit", methods=["POST"])
+@jwt_required()
+def confirm_initial_deposit(application_id):
+    uid = get_jwt_identity()
+    admin_user = User.query.get(uid)
+
+    if not admin_required(admin_user):
+        return error_response("FORBIDDEN", "Admin privileges required", status=403)
+
+    application = WriterApplication.query.get(application_id)
+    if not application:
+        return error_response("NOT_FOUND", "Application not found", status=404)
+
+    if application.status != "approved":
+        return error_response(
+            "INVALID_STATUS",
+            "Application must be approved before confirming deposit",
+            status=400
+        )
+
+    user = application.user
+
+    try:
+        # Update user (THIS IS CRITICAL)
+        user.application_status = "paid_initial_deposit"
+        user.account_status = "paid_initial_deposit"
+        user.role = "writer"
+
+        db.session.commit()
+
+        return success_response({
+            "message": "Initial deposit confirmed. Writer activated.",
+            "application_id": application.id,
+            "user_id": user.id,
+            "application_status": application.status,
+            "account_status": user.account_status,
+            "activated_at": datetime.utcnow().isoformat()
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return error_response("SERVER_ERROR", str(e), status=500)

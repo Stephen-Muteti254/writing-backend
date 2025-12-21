@@ -10,8 +10,8 @@ class PaymentMethod(db.Model):
 
     id = db.Column(db.String(50), primary_key=True, default=gen_method_id)
     user_id = db.Column(db.String(50), db.ForeignKey("users.id"))
-    method = db.Column(db.String(50))  # e.g. Payoneer
-    details = db.Column(db.String(255))  # email or account ID
+    method = db.Column(db.String(50))
+    details = db.Column(db.String(255))
     is_default = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

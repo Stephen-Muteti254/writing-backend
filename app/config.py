@@ -19,6 +19,8 @@ class Config:
     ORDERS_FOLDER = os.path.join(basedir, "uploads/orders")
     SUBMISSIONS_FOLDER = os.path.join(basedir, "uploads/submissions")
     SUPPORT_UPLOADS_FOLDER = os.path.join(basedir, "uploads/support_chats")
+    WRITER_PAYOUT_PERCENTAGE = 0.30
+    PAYSTACK_SECRET_KEY = "sk_live_e3c9231206431254561a88cd7d12b50098fe21f6"
 
 class DevelopmentConfig(Config):
     DEBUG = True

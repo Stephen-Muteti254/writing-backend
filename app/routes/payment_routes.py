@@ -214,3 +214,91 @@ def update_payment_method(pm_id):
     db.session.commit()
 
     return success_response({"message": "Payment method updated"})
+
+
+@bp.route("/init", methods=["POST"])
+@jwt_required()
+def init_order_payment():
+    uid = get_jwt_identity()
+    data = request.get_json() or {}
+
+    order_id = data.get("order_id")
+    order = Order.query.get(order_id)
+
+    if not order or order.client_id != uid:
+        return error_response("FORBIDDEN", "Invalid order", 403)
+
+    if order.payment_status == "paid":
+        return error_response("ALREADY_PAID", "Order already paid", 400)
+
+    amount_usd = order.client_budget
+
+    reference = f"order_{order.id}_{uuid.uuid4().hex[:8]}"
+
+    payment = OrderPayment(
+        order_id=order.id,
+        client_id=uid,
+        reference=reference,
+        amount_usd=amount_usd,
+        status="pending"
+    )
+
+    db.session.add(payment)
+    db.session.commit()
+
+    return success_response({
+        "public_key": current_app.config["PAYSTACK_PUBLIC_KEY"],
+        "email": order.client.email,
+        "amount": amount_usd,
+        "currency": "USD",
+        "reference": reference,
+        "callback_url": current_app.config["PAYSTACK_CALLBACK_URL"],
+        "metadata": {
+            "order_id": order.id,
+            "payment_id": payment.id,
+            "client_id": uid,
+            "usd_amount": amount_usd
+        }
+    })
+
+
+@bp.route("", methods=["POST"])
+def handle_paystack_webhook():
+    secret = current_app.config["PAYSTACK_SECRET_KEY"]
+    signature = request.headers.get("x-paystack-signature")
+
+    body = request.get_data()
+
+    computed = hmac.new(
+        secret.encode(),
+        body,
+        hashlib.sha512
+    ).hexdigest()
+
+    if not signature or computed != signature:
+        return "Invalid signature", 401
+
+    payload = request.json
+
+    if payload.get("event") == "charge.success":
+        data = payload["data"]
+        reference = data["reference"]
+
+        payment = OrderPayment.query.filter_by(reference=reference).first()
+        if not payment:
+            return "Payment not found", 404
+
+        # Idempotency guard
+        if payment.status == "success":
+            return "OK", 200
+
+        payment.status = "success"
+        payment.paid_at = datetime.utcnow()
+
+        order = Order.query.get(payment.order_id)
+        if order:
+            order.payment_status = "paid"
+
+        db.session.commit()
+
+    return "OK", 200

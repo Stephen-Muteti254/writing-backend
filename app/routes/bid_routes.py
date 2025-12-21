@@ -135,89 +135,82 @@ def get_bid(bid_id):
         return error_response("NOT_FOUND", "Bid not found", status=404)
     return success_response(bid.serialize())
 
-
 # ------------------------------------------------------------
-#  POST /orders/<order_id>/bids — Place a bid
+# POST /orders/<order_id>/bids — Place a bid
 # ------------------------------------------------------------
 @bp.route("/orders/<order_id>/bids", methods=["POST"])
 @jwt_required()
 def create_bid(order_id):
     data = request.get_json() or {}
-    bid_amount = data.get("amount")
-    message = data.get("message")  # proposal text
-    estimated_completion = data.get("deadline")
-    uid = get_jwt_identity()       # writer ID
+    uid = get_jwt_identity()
 
-    # --- VALIDATION ---
+    # Disallow custom deadlines
+    if data.get("deadline"):
+        return error_response(
+            "VALIDATION_ERROR",
+            "Custom deadlines are not allowed",
+            422
+        )
+
+    # --- Validate bid amount ---
     try:
-        bid_amount_float = float(bid_amount)
+        writer_bid = float(data.get("amount"))
     except (TypeError, ValueError):
-        return error_response("VALIDATION_ERROR", "Bid amount must be numeric",
-                              {"field": "amount"}, 422)
+        return error_response(
+            "VALIDATION_ERROR",
+            "Bid amount must be numeric",
+            {"field": "amount"},
+            422
+        )
 
     order = Order.query.get(order_id)
     if not order:
         return error_response("NOT_FOUND", "Order not found", 404)
 
-    if Bid.query.filter_by(order_id=order_id, status="accepted").first() or order.writer_id:
-        return error_response("INVALID_OPERATION", "This order already has an accepted bid", 400)
+    if order.writer_id or Bid.query.filter_by(order_id=order_id, status="accepted").first():
+        return error_response(
+            "INVALID_OPERATION",
+            "This order already has an accepted bid",
+            400
+        )
 
-    if bid_amount_float > order.budget:
-        return error_response("VALIDATION_ERROR", "Bid cannot exceed order budget",
-                              {"field": "amount"}, 422)
+    # --- Enforce writer-visible minimum ---
+    if writer_bid < order.writer_budget:
+        return error_response(
+            "VALIDATION_ERROR",
+            f"Minimum bid is {order.writer_budget}",
+            {"field": "amount"},
+            422
+        )
 
-    est_date = None
-    if estimated_completion:
-        try:
-            est_date = datetime.fromisoformat(estimated_completion)
-        except ValueError:
-            return error_response(
-                "VALIDATION_ERROR",
-                "Deadline must include date AND time in ISO format (YYYY-MM-DDTHH:MM)",
-                {"field": "deadline"},
-                422
-            )
+    writer_pct = current_app.config["WRITER_PAYOUT_PERCENTAGE"]
+    client_visible_bid = round(writer_bid / writer_pct, 2)
 
-        if est_date > order.deadline:
-            return error_response(
-                "VALIDATION_ERROR",
-                "Proposed deadline cannot exceed client's deadline",
-                {"field": "deadline"},
-                422
-            )
-
-    # ----------------------------------------------------
-    # CREATE THE BID ITSELF
-    # ----------------------------------------------------
+    # --- Create bid ---
     try:
-        bid = place_bid(order_id, uid, bid_amount_float, message, est_date)
+        bid = place_bid(
+            order_id=order.id,
+            user_id=uid,
+            writer_amount=writer_bid,
+            client_amount=client_visible_bid,
+            message=data.get("message"),
+        )
     except ValueError as e:
         return error_response("INVALID_OPERATION", str(e), 400)
     except Exception as e:
         db.session.rollback()
         return error_response("SERVER_ERROR", str(e), 500)
 
-    # ----------------------------------------------------
-    # CREATE OR GET CHAT (writer ↔ client for this order)
-    # ----------------------------------------------------
-    client_id = order.client_id
-    chat = get_or_create_chat(order_id, client_id, uid)
+    # --- Create or get chat ---
+    chat = get_or_create_chat(order.id, order.client_id, uid)
 
-    # ----------------------------------------------------
-    # SANITIZE & INSERT THE PROPOSAL AS FIRST MESSAGE
-    # ----------------------------------------------------
-    if message:
-        sanitized = sanitize_message(message)
-        add_message(chat.id, uid, sanitized)
+    if data.get("message"):
+        add_message(chat.id, uid, sanitize_message(data["message"]))
 
-    # ----------------------------------------------------
-    # RETURN RESPONSE
-    # ----------------------------------------------------
-    bid_data = bid.serialize()
-    bid_data["chat_id"] = chat.id
+    payload = bid.serialize()
+    payload["chat_id"] = chat.id
 
-    return success_response(bid_data, status=201)
-
+    return success_response(payload, status=201)
 
 # ------------------------------------------------------------
 #  PUT /bids/<bid_id> — Update bid message or amount (if open)
@@ -354,11 +347,13 @@ def client_update_bid_status(bid_id):
     # ------------------------------------------------
     if action == "accept":
         if derived_status == "unconfirmed":
-            return error_response("INVALID_OPERATION", "Cannot accept an unconfirmed bid", status=400)
+            return error_response(
+                "INVALID_OPERATION",
+                "Cannot accept an unconfirmed bid",
+                status=400
+            )
 
-        # ------------------------------------------------------------
-        # Prevent multiple accepted bids for the same order
-        # ------------------------------------------------------------
+        # Prevent multiple accepted bids
         existing_accepted = (
             Bid.query.filter(
                 Bid.order_id == bid.order_id,
@@ -374,17 +369,27 @@ def client_update_bid_status(bid_id):
                 status=409
             )
 
-        # Now safe to accept this bid
-        bid.status = "accepted"
-        bid.order.writer_id = bid.user_id
-        bid.order.status = "in_progress"
+        order = bid.order
 
-        # Reject other bids
+        # ------------------------------------------------
+        # UPDATE ORDER BUDGETS (SOURCE OF TRUTH)
+        # ------------------------------------------------
+        order.writer_budget = bid.writer_amount
+        order.client_budget = bid.client_amount
+
+        # Assign writer & status
+        bid.status = "accepted"
+        order.writer_id = bid.user_id
+        order.status = "in_progress"
+
+        # Reject all other bids
         other_bids = (
-            Bid.query.filter(Bid.order_id == bid.order_id, Bid.id != bid.id)
+            Bid.query
+            .filter(Bid.order_id == bid.order_id, Bid.id != bid.id)
             .filter(Bid.status.in_(["open", "pending"]))
             .all()
         )
+
         for b in other_bids:
             b.status = "rejected"
 

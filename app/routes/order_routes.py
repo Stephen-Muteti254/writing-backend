@@ -1,6 +1,6 @@
 import os
 from datetime import timezone, datetime
-from flask import Blueprint, request, send_file, current_app
+from flask import Blueprint, request, send_file, current_app, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from app.models.order import Order
@@ -19,6 +19,15 @@ from app.services.order_service import (
     save_uploaded_file,
     calculate_minimum_price
 )
+from decimal import Decimal, ROUND_HALF_UP
+
+def format_money(value):
+    if value is None:
+        return None
+    return float(
+        Decimal(value).quantize(Decimal("0.00"), rounding=ROUND_HALF_UP)
+    )
+
 
 bp = Blueprint("orders", __name__, url_prefix="/api/v1/orders")
 
@@ -55,6 +64,8 @@ def list_orders():
     # If writer is fetching ONLY their assigned orders
     if assigned_to == "me":
         q = q.filter(Order.writer_id == user.id)
+
+        q = q.filter(Order.payment_status == "paid")
 
         if status:
             if status == "in-progress":
@@ -105,16 +116,26 @@ def list_orders():
                 cast(Order.id, String).ilike(search_term),
                 Order.title.ilike(search_term),
                 Order.subject.ilike(search_term),
-                Order.details.ilike(search_term),
+                Order.description.ilike(search_term),
                 Order.status.ilike(search_term)
             )
         )
 
     # Budget/date filters
     if min_budget is not None:
-        q = q.filter(Order.budget >= min_budget)
+        q = q.filter(
+            Order.writer_budget >= min_budget
+            if user.role == "writer"
+            else Order.client_budget >= min_budget
+        )
+
     if max_budget is not None:
-        q = q.filter(Order.budget <= max_budget)
+        q = q.filter(
+            Order.writer_budget <= max_budget
+            if user.role == "writer"
+            else Order.client_budget <= max_budget
+        )
+
     if date_from:
         try:
             d_from = parser.parse(date_from)
@@ -139,7 +160,11 @@ def list_orders():
             "type": o.type,
             "pages": o.pages,
             "deadline": o.deadline.isoformat() + "Z" if o.deadline else None,
-            "budget": o.budget,
+            "budget": format_money(
+                o.writer_budget
+                if user.role == "writer"
+                else o.client_budget
+            ),
             "status": o.status,
             "client": {
                 "id": o.client.id,
@@ -157,8 +182,7 @@ def list_orders():
 # ------------------------------------------------------------
 #  Helper: serialize_order(order) — returns order details + files + writer_assigned
 # ------------------------------------------------------------
-def serialize_order(order):
-    """Return order details + file URLs for API responses."""
+def serialize_order(order, viewer):
     data = {
         "id": order.id,
         "title": order.title,
@@ -166,7 +190,13 @@ def serialize_order(order):
         "type": order.type,
         "pages": order.pages,
         "deadline": order.deadline.isoformat() if order.deadline else None,
-        "budget": order.budget,
+
+        # CRITICAL: role-based budget exposure
+        "budget": format_money(
+            order.writer_budget
+            if viewer.role == "writer"
+            else order.client_budget
+        ),
         "status": order.status,
         "description": order.description,
         "requirements": order.requirements,
@@ -180,20 +210,25 @@ def serialize_order(order):
         {
             "id": inv.writer.id,
             "name": inv.writer.full_name,
-            "avatar": inv.writer.profile_image
+            "avatar": inv.writer.profile_image,
         }
         for inv in order.invitations
     ]
 
-    # Attach file URLs (if any files exist)
+    # Attach file URLs
     root_dir = current_app.config.get("ORDERS_FOLDER", "uploads/orders")
     order_dir = os.path.join(root_dir, str(order.client_id), order.id)
+
     if os.path.exists(order_dir):
-        file_urls = [
-            current_app.url_for("orders.get_order_file", order_id=order.id, filename=f, _external=True)
+        data["files"] = [
+            url_for(
+                "orders.get_order_file",
+                order_id=order.id,
+                filename=f,
+                _external=True
+            )
             for f in os.listdir(order_dir)
         ]
-        data["files"] = file_urls
     else:
         data["files"] = []
 
@@ -207,10 +242,16 @@ def serialize_order(order):
 @jwt_required()
 def get_order(order_id):
     uid = get_jwt_identity()
+    user = User.query.get(uid)
+
+    if not user:
+        return error_response("NOT_FOUND", "User not found", status=404)
+
     order = Order.query.get(order_id)
     if not order:
         return error_response("NOT_FOUND", "Order not found", status=404)
-    return success_response(serialize_order(order))
+
+    return success_response(serialize_order(order, user))
 
 
 # ------------------------------------------------------------
@@ -244,7 +285,10 @@ def create_new_order():
     order_type = form_data.get("orderType")
     pages = int(form_data.get("pages") or 1)
     deadline = form_data.get("deadline")
-    budget = float(form_data.get("budget", 0))
+    
+    client_budget = float(form_data.get("budget", 0))
+    writer_pct = current_app.config["WRITER_PAYOUT_PERCENTAGE"]
+    writer_budget = round(client_budget * writer_pct, 2)
 
     # --- Calculate minimum allowed budget ---
     min_budget = calculate_minimum_price(
@@ -255,13 +299,12 @@ def create_new_order():
         now=datetime.utcnow()
     )
 
-    if budget < min_budget:
+    if client_budget < min_budget:
         return error_response("BUDGET ERROR", f"Budget too low. Minimum allowed is {min_budget}", status=400)
 
     deadline_str = form_data.get("deadline")
     if deadline_str:
         try:
-            # Accept many ISO variants
             form_data["deadline"] = parser.parse(deadline_str)
         except Exception as e:
             print(f"[DEADLINE_PARSE_ERROR] {e} for {deadline_str}")
@@ -275,13 +318,6 @@ def create_new_order():
         pages = 1
 
     try:
-        budget = float(form_data.get("budget", 0))
-    except ValueError:
-        budget = 0.0
-
-    print(f"deadline before create_order = {form_data.get('deadline')} ({type(form_data.get('deadline'))})")
-
-    try:
         # collect preferred writers if provided
         preferred_writers = []
         for key, value in form_data.items():
@@ -289,13 +325,14 @@ def create_new_order():
                 preferred_writers.append(value.strip())
 
         form_data["min_budget"] = min_budget
-        # create order via service
+        form_data["client_budget"] = client_budget
+        form_data["writer_budget"] = writer_budget
+        
         if files:
             order = create_order(user, form_data, files)
         else:
             order = create_order(user, form_data)
 
-        # --- Handle preferred writer invitations ---
         if preferred_writers:
             invited = []
             for w in preferred_writers:
