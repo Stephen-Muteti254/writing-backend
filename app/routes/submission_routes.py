@@ -31,6 +31,30 @@ bp = Blueprint(
     url_prefix="/api/v1/orders"
 )
 
+def credit_writer_for_completed_order(order: Order):
+    wallet = Wallet.query.filter_by(user_id=order.writer_id).first()
+    if not wallet:
+        wallet = Wallet(id=gen_uuid("wal"), user_id=order.writer_id)
+        db.session.add(wallet)
+
+    amount = order.writer_budget
+
+    # Ledger entry
+    tx = WalletTransaction(
+        id=gen_uuid("txn"),
+        wallet_id=wallet.id,
+        amount=amount,
+        type="order_earning",
+        reference_type="order",
+        reference_id=order.id,
+        description=f"Earnings from order {order.id}"
+    )
+
+    wallet.balance += amount
+
+    db.session.add(tx)
+
+
 # ------------------------------------------------------------
 # Writer submits work
 # ------------------------------------------------------------
@@ -176,12 +200,22 @@ def complete_order(order_id):
 
     order = Order.query.get_or_404(order_id)
 
+    if order.status == "completed":
+        return error_response(
+            "ALREADY_COMPLETED",
+            "Order already completed",
+            400
+        )
+
     # Only the client who owns the order can mark it complete
     if user.role != "client" or order.client_id != user.id:
         return error_response("FORBIDDEN", "Client access required", status=403)
 
     # Mark the order as complete
     update_order_status(order, status="completed")
+
+    # credit the writer account
+    credit_writer_for_completed_order(order)
 
     # Return harmonized success response
     return success_response(message=f"Order {order.id} marked as complete")

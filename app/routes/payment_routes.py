@@ -1,108 +1,133 @@
-from flask import Blueprint, request
+from flask import Blueprint, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.services.payment_service import get_balance_for_user, create_withdrawal
 from app.models.user import User
 from app.utils.response_formatter import success_response, error_response
 from app.models.payment_method import PaymentMethod
 from app.extensions import db
 
+from decimal import Decimal
+import uuid
+import hmac
+import hashlib
+from datetime import datetime
+
+from app.models.wallet import Wallet
+from app.models.wallet_transaction import WalletTransaction
+from app.models.withdrawal_request import WithdrawalRequest
+from app.models.order import Order
+from app.models.order_payment import OrderPayment
+
 bp = Blueprint("payments", __name__, url_prefix="/api/v1")
+
+
+def gen_uuid(prefix):
+    return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
 
 @bp.route("/balance", methods=["GET"])
 @jwt_required()
 def balance():
     uid = get_jwt_identity()
-    user = User.query.get(uid)
-    if not user:
-        return error_response("NOT_FOUND", "User not found", status=404)
-    bal = get_balance_for_user(user)
-    return success_response(bal)
+    wallet = Wallet.query.filter_by(user_id=uid).first()
+    return success_response({
+        "balance": float(wallet.balance) if wallet else 0.0,
+        "currency": wallet.currency if wallet else "USD"
+    })
+
 
 @bp.route("/transactions", methods=["GET"])
 @jwt_required()
 def transactions():
-    from app.models.transaction import Transaction
     uid = get_jwt_identity()
-    ttype = request.args.get("type")
-    page = int(request.args.get("page",1))
-    limit = int(request.args.get("limit",20))
+    page = int(request.args.get("page", 1))
+    limit = int(request.args.get("limit", 20))
 
-    q = Transaction.query.filter_by(user_id=uid)
+    wallet = Wallet.query.filter_by(user_id=uid).first()
+    if not wallet:
+        return success_response({"transactions": [], "pagination": {}})
 
-    # EXCLUDE withdrawals if you want separate tab
-    q = q.filter(Transaction.type == "withdrawal")
-
-    if ttype:
-        q = q.filter_by(type=ttype)
+    q = WalletTransaction.query.filter_by(wallet_id=wallet.id)
 
     total = q.count()
-    items = q.order_by(Transaction.created_at.desc()).offset((page-1)*limit).limit(limit).all()
+    items = (
+        q.order_by(WalletTransaction.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+        .all()
+    )
 
-    txns = []
-    for t in items:
-        txns.append({
-            "id": t.id,
-            "type": t.type,
-            "amount": t.amount,
-            "description": t.description,
-            "status": t.status,
-            "order_id": t.order_id,
-            "created_at": t.created_at.isoformat() + "Z"
-        })
+    return success_response({
+        "transactions": [
+            {
+                "id": t.id,
+                "type": t.type,
+                "amount": float(t.amount),
+                "reference_type": t.reference_type,
+                "reference_id": t.reference_id,
+                "description": t.description,
+                "created_at": t.created_at.isoformat() + "Z"
+            }
+            for t in items
+        ],
+        "pagination": {
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    })
 
-    pagination = {"total": total, "page": page, "limit": limit, "total_pages": (total + limit-1)//limit}
-    return success_response({"transactions": txns, "pagination": pagination})
 
 @bp.route("/withdrawals", methods=["POST"])
 @jwt_required()
-def withdraw():
-    data = request.get_json() or {}
-    amount = data.get("amount")
-    method = data.get("payment_method")
-    details = data.get("payment_details")
-
-    if not amount or not method or not details:
-        return error_response("VALIDATION_ERROR", "Amount, method and details are required")
-
+def request_withdrawal():
     uid = get_jwt_identity()
+    data = request.get_json() or {}
 
-    try:
-        txn = create_withdrawal(uid, amount, method, details)
-    except Exception as e:
-        print(f"error = {str(e)}")
-        return error_response("NO_PAYMENT_METHOD", str(e), status=400)
+    amount = Decimal(str(data.get("amount")))
+    method = data.get("payment_method")
+    destination = data.get("payment_details")
+
+    wallet = Wallet.query.filter_by(user_id=uid).first()
+
+    wallet = (
+        Wallet.query
+        .filter_by(user_id=uid)
+        .with_for_update()
+        .first()
+    )
+    if not wallet or wallet.balance < amount:
+        return error_response("INSUFFICIENT_FUNDS", "Not enough balance", 400)
+
+    wr = WithdrawalRequest(
+        id=gen_uuid("wd"),
+        user_id=uid,
+        amount=amount,
+        method=method,
+        destination=destination
+    )
+
+    db.session.add(wr)
+    db.session.commit()
 
     return success_response({
-        "id": txn.id,
-        "amount": txn.amount,
-        "status": txn.status,
-        "created_at": txn.created_at.isoformat() + "Z"
+        "id": wr.id,
+        "status": wr.status,
+        "amount": float(wr.amount)
     }, status=201)
 
 
 @bp.route("/withdrawals", methods=["GET"])
 @jwt_required()
 def list_withdrawals():
-    from app.models.transaction import Transaction
-
     uid = get_jwt_identity()
     page = int(request.args.get("page", 1))
     limit = int(request.args.get("limit", 20))
 
-    q = Transaction.query.filter_by(user_id=uid, type="withdrawal")
-
-    # Optional filters
-    date_from = request.args.get("from")
-    date_to = request.args.get("to")
-
-    if date_from:
-        q = q.filter(Transaction.created_at >= date_from)
-    if date_to:
-        q = q.filter(Transaction.created_at <= date_to)
+    q = WithdrawalRequest.query.filter_by(user_id=uid)
 
     total = q.count()
     items = (
-        q.order_by(Transaction.created_at.desc())
+        q.order_by(WithdrawalRequest.requested_at.desc())
          .offset((page - 1) * limit)
          .limit(limit)
          .all()
@@ -111,11 +136,18 @@ def list_withdrawals():
     return success_response({
         "withdrawals": [
             {
-                "id": t.id,
-                "amount": t.amount,
-                "status": t.status,
-                "created_at": t.created_at.isoformat() + "Z"
-            } for t in items
+                "id": w.id,
+                "amount": float(w.amount),
+                "status": w.status,
+                "method": w.method,
+                "destination": w.destination,
+                "requested_at": w.requested_at.isoformat() + "Z",
+                "processed_at": (
+                    w.processed_at.isoformat() + "Z"
+                    if w.processed_at else None
+                )
+            }
+            for w in items
         ],
         "pagination": {
             "total": total,

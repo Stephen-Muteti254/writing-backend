@@ -57,6 +57,16 @@ def list_orders():
 
     q = Order.query
 
+    # Exclude expired orders for writers
+    if user.role == "writer":
+        now = datetime.now(timezone.utc)
+        q = q.filter(
+            or_(
+                Order.deadline == None,
+                Order.deadline >= now
+            )
+        )
+
     # Role filtering - clients: only their orders
     if user.role == "client":
         q = q.filter_by(client_id=user.id)
@@ -175,7 +185,6 @@ def list_orders():
             "created_at": o.created_at.isoformat() + "Z" if o.created_at else None,
             "writer_assigned": o.writer_id is not None,
         })
-    print(f"orders = {orders}")
 
     return success_response({"orders": orders, "pagination": pagination})
 
@@ -210,10 +219,10 @@ def serialize_order(order, viewer):
     # ADD THIS
     if order.client and viewer.role == "writer":
         data["client"] = {
-            "id": order.client.id,
-            "name": order.client.full_name,
+            # "id": order.client.id,
+            # "name": order.client.full_name,
             "country": order.client.country,
-            "avatar": order.client.profile_image,
+            # "avatar": order.client.profile_image,
         }
 
     data["preferred_writers"] = [
@@ -260,6 +269,16 @@ def get_order(order_id):
     order = Order.query.get(order_id)
     if not order:
         return error_response("NOT_FOUND", "Order not found", status=404)
+
+    # Prevent writers from accessing expired orders
+    if user.role == "writer" and order.deadline:
+        now = datetime.now(timezone.utc)
+        if order.deadline < now:
+            return error_response(
+                "FORBIDDEN",
+                "This order is no longer available.",
+                status=403
+            )
 
     return success_response(serialize_order(order, user))
 
