@@ -159,7 +159,7 @@ def list_orders():
             "subject": o.subject,
             "type": o.type,
             "pages": o.pages,
-            "deadline": o.deadline.isoformat() + "Z" if o.deadline else None,
+            "deadline": o.deadline.astimezone(timezone.utc).isoformat() if o.deadline else None,
             "budget": format_money(
                 o.writer_budget
                 if user.role == "writer"
@@ -175,6 +175,7 @@ def list_orders():
             "created_at": o.created_at.isoformat() + "Z" if o.created_at else None,
             "writer_assigned": o.writer_id is not None,
         })
+    print(f"orders = {orders}")
 
     return success_response({"orders": orders, "pagination": pagination})
 
@@ -189,7 +190,7 @@ def serialize_order(order, viewer):
         "subject": order.subject,
         "type": order.type,
         "pages": order.pages,
-        "deadline": order.deadline.isoformat() if order.deadline else None,
+        "deadline": order.deadline.astimezone(timezone.utc).isoformat() if order.deadline else None,
 
         # CRITICAL: role-based budget exposure
         "budget": format_money(
@@ -205,6 +206,15 @@ def serialize_order(order, viewer):
         "writer_id": order.writer_id,
         "writer_assigned": order.writer_id is not None,
     }
+
+    # ADD THIS
+    if order.client and viewer.role == "writer":
+        data["client"] = {
+            "id": order.client.id,
+            "name": order.client.full_name,
+            "country": order.client.country,
+            "avatar": order.client.profile_image,
+        }
 
     data["preferred_writers"] = [
         {
@@ -290,27 +300,38 @@ def create_new_order():
     writer_pct = current_app.config["WRITER_PAYOUT_PERCENTAGE"]
     writer_budget = round(client_budget * writer_pct, 2)
 
+    
+    deadline_str = form_data.get("deadline")
+
+    deadline_utc = None
+    
+    if deadline_str:
+        parsed = parser.isoparse(deadline_str)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        deadline_utc = parsed.astimezone(timezone.utc)
+
+    form_data["deadline"] = deadline_utc
+
+
     # --- Calculate minimum allowed budget ---
+    now_utc = datetime.now(timezone.utc)
+
     min_budget = calculate_minimum_price(
         category=category,
         order_type=order_type,
         pages=pages,
-        deadline = parser.parse(deadline).astimezone(timezone.utc),
-        now=datetime.utcnow()
+        deadline=deadline_utc,
+        now=now_utc
     )
 
     if client_budget < min_budget:
-        return error_response("BUDGET ERROR", f"Budget too low. Minimum allowed is {min_budget}", status=400)
+        return error_response(
+            "BUDGET ERROR",
+            f"Budget too low. Minimum allowed is {min_budget}",
+            status=400
+        )
 
-    deadline_str = form_data.get("deadline")
-    if deadline_str:
-        try:
-            form_data["deadline"] = parser.parse(deadline_str)
-        except Exception as e:
-            print(f"[DEADLINE_PARSE_ERROR] {e} for {deadline_str}")
-            form_data["deadline"] = None
-    else:
-        form_data["deadline"] = None
 
     try:
         pages = int(form_data.get("pages", 1))
@@ -318,7 +339,6 @@ def create_new_order():
         pages = 1
 
     try:
-        # collect preferred writers if provided
         preferred_writers = []
         for key, value in form_data.items():
             if key.startswith("preferred_writers[") and value and value.strip():
@@ -365,210 +385,239 @@ def create_new_order():
 @jwt_required()
 def patch_order(order_id):
     uid = get_jwt_identity()
-    order = Order.query.get(order_id)
 
+    order = Order.query.get(order_id)
     if not order:
         return error_response("NOT_FOUND", "Order not found", status=404)
 
-    # Prevent editing assigned orders — enforce on backend
+    # --------------------------------------------------
+    # Business rule: cannot edit assigned orders
+    # --------------------------------------------------
     if order.writer_id is not None:
         return error_response(
             "FORBIDDEN",
-            "This order has already been assigned to a writer and cannot be edited.",
-            status=403
+            "This order has already been assigned and cannot be edited.",
+            status=403,
         )
 
-    # Capture original state for diffing
-    original = {
-        "title": order.title,
-        "description": order.description,
-        "requirements": order.requirements,
-        "subject": order.subject,
-        "type": order.type,
-        "pages": order.pages,
-        "budget": order.budget,
-        "deadline": order.deadline,
-        "format": getattr(order, "format", None),
-        "citation_style": getattr(order, "citation_style", None),
-        "language": getattr(order, "language", None),
-        "additional_notes": getattr(order, "additional_notes", None),
-    }
+    # --------------------------------------------------
+    # Parse payload
+    # --------------------------------------------------
+    is_multipart = (
+        request.content_type
+        and request.content_type.startswith("multipart/form-data")
+    )
 
-    # Detect if FormData
-    if request.content_type and request.content_type.startswith("multipart/form-data"):
+    if is_multipart:
         data = request.form.to_dict()
         files = request.files.getlist("attachedFiles")
+        existing_files = request.form.getlist("existingFiles")
     else:
         data = request.get_json(silent=True) or {}
         files = []
+        existing_files = []
 
-    # --- Extract existingFiles from frontend ---
-    existing_files = request.form.getlist("existingFiles") if request.form else []
-    existing_filenames = [os.path.basename(f) for f in existing_files]
+    existing_filenames = {os.path.basename(f) for f in existing_files}
 
-    # Map frontend → backend fields and allowed updates
+    # --------------------------------------------------
+    # Frontend → backend field mapping
+    # --------------------------------------------------
     field_map = {
         "category": "subject",
         "orderType": "type",
-        "detailedRequirements": "requirements",
-        "additionalNotes": "additional_notes"
+        "detailedRequirements": "detailed_requirements",
+        "additionalNotes": "additional_notes",
     }
-    normalized = {field_map.get(k, k): v for k, v in data.items()}
 
-    allowed = {
-        "title", "description", "requirements", "subject", "type", "pages", "budget",
-        "deadline", "status", "progress", "format", "citation_style", "language", "additional_notes"
+    normalized = {
+        field_map.get(k, k): v for k, v in data.items()
     }
-    updates = {k: v for k, v in normalized.items() if k in allowed}
 
-    # Convert numeric fields safely
+    # --------------------------------------------------
+    # Editable fields ONLY
+    # --------------------------------------------------
+    editable_fields = {
+        "title",
+        "subject",
+        "type",
+        "pages",
+        "description",
+        "requirements",
+        "detailed_requirements",
+        "additional_notes",
+        "deadline",
+    }
+
+    updates = {
+        k: v for k, v in normalized.items() if k in editable_fields
+    }
+
+    # --------------------------------------------------
+    # Type coercion & validation
+    # --------------------------------------------------
     if "pages" in updates:
         try:
-            updates["pages"] = int(updates["pages"])
-        except (ValueError, TypeError):
-            updates["pages"] = 1
+            updates["pages"] = max(1, int(updates["pages"]))
+        except (TypeError, ValueError):
+            return error_response(
+                "VALIDATION_ERROR",
+                "Invalid pages value",
+                status=422,
+            )
 
-    if "budget" in updates:
-        try:
-            updates["budget"] = float(updates["budget"])
-        except (ValueError, TypeError):
-            updates["budget"] = 0.0
-
-    if "progress" in updates:
-        try:
-            updates["progress"] = int(updates["progress"])
-        except (ValueError, TypeError):
-            updates["progress"] = 0
-
-    # Parse deadline if present
     if "deadline" in updates and updates["deadline"]:
         try:
-            updates["deadline"] = parser.parse(updates["deadline"])
+            parsed = parser.isoparse(updates["deadline"])
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            updates["deadline"] = parsed.astimezone(timezone.utc)
         except Exception:
-            updates["deadline"] = None
+            return error_response(
+                "VALIDATION_ERROR",
+                "Invalid deadline format",
+                status=422,
+            )
 
-    # Apply updates to model
-    for k, v in updates.items():
-        setattr(order, k, v)
+    # --------------------------------------------------
+    # Determine if pricing needs recalculation
+    # --------------------------------------------------
+    pricing_fields = {"subject", "type", "pages", "deadline"}
+    pricing_changed = any(f in updates for f in pricing_fields)
 
-    # --- Handle file uploads & removals ---
+    if pricing_changed:
+        now_utc = datetime.now(timezone.utc)
+
+        new_subject = updates.get("subject", order.subject)
+        new_type = updates.get("type", order.type)
+        new_pages = updates.get("pages", order.pages)
+        new_deadline = updates.get("deadline", order.deadline)
+
+        new_min_budget = calculate_minimum_price(
+            category=new_subject,
+            order_type=new_type,
+            pages=new_pages,
+            deadline=new_deadline,
+            now=now_utc,
+        )
+
+        # If client supplied new budget, validate it
+        if "budget" in data:
+            try:
+                client_budget = float(data["budget"])
+            except ValueError:
+                return error_response(
+                    "VALIDATION_ERROR",
+                    "Invalid budget value",
+                    status=422,
+                )
+
+            if client_budget < new_min_budget:
+                return error_response(
+                    "BUDGET_ERROR",
+                    f"Minimum allowed budget is {new_min_budget}",
+                    status=400,
+                )
+        else:
+            client_budget = float(order.client_budget)
+
+            if client_budget < new_min_budget:
+                return error_response(
+                    "BUDGET_ERROR",
+                    f"Order requires a minimum budget of {new_min_budget}",
+                    status=400,
+                )
+
+        writer_pct = current_app.config["WRITER_PAYOUT_PERCENTAGE"]
+        writer_budget = round(client_budget * writer_pct, 2)
+
+        order.client_budget = client_budget
+        order.writer_budget = writer_budget
+        order.minimum_allowed_budget = new_min_budget
+
+    # --------------------------------------------------
+    # Apply attribute updates
+    # --------------------------------------------------
+    for field, value in updates.items():
+        setattr(order, field, value)
+
+    # --------------------------------------------------
+    # File handling
+    # --------------------------------------------------
     root_dir = current_app.config.get("ORDERS_FOLDER", "uploads/orders")
-    order_dir = os.path.join(root_dir, str(order.client_id), str(order.id))
+    order_dir = os.path.join(root_dir, str(order.client_id), order.id)
     os.makedirs(order_dir, exist_ok=True)
 
-    # remove files not in existing_files
-    current_files = os.listdir(order_dir) if os.path.exists(order_dir) else []
-    for fname in current_files:
+    # Remove deleted files
+    for fname in os.listdir(order_dir):
         if fname not in existing_filenames:
             try:
                 os.remove(os.path.join(order_dir, fname))
-            except FileNotFoundError:
+            except OSError:
                 pass
 
-    # Save newly uploaded files
-    uploaded_files = []
+    # Save new uploads
     for file in files:
-        if file and getattr(file, "filename", None):
-            fname, fpath = save_uploaded_file(file, order_dir)
-            uploaded_files.append(fname)
+        if file and file.filename:
+            save_uploaded_file(file, order_dir)
 
-    all_files = os.listdir(order_dir) if os.path.exists(order_dir) else []
-    file_list_text = "\n".join(all_files)
-    existing_text = (order.requirements or "").split("\n\n[Attachments:")[0]
-    order.requirements = f"{existing_text}\n\n[Attachments: {len(all_files)} file(s)]\n{file_list_text}"
+    attachments = os.listdir(order_dir) if os.path.exists(order_dir) else []
+    base_text = (order.requirements or "").split("\n\n[Attachments:")[0]
 
-    # --- Handle tags ---
-    tags = [v for k, v in data.items() if k.startswith("tags[") and v and v.strip()]
-    if tags:
-        from app.models.order_tag import OrderTag
-        OrderTag.query.filter_by(order_id=order.id).delete()
-        for tag in tags:
-            db.session.add(OrderTag(order_id=order.id, name=tag))
-
-    # --- Handle preferred writers ---
-    preferred_writers = [v for k, v in data.items() if k.startswith("preferred_writers[") and v and v.strip()]
-    if preferred_writers:
-        existing_invites = {inv.writer_id for inv in order.invitations}
-        for w in preferred_writers:
-            writer = User.query.filter((User.id == w) | (User.full_name.ilike(f"%{w}%"))).first()
-            if writer and writer.role == "writer" and writer.id not in existing_invites:
-                db.session.add(OrderInvitation(order_id=order.id, writer_id=writer.id))
+    if attachments:
+        order.requirements = (
+            f"{base_text}\n\n"
+            f"[Attachments: {len(attachments)} file(s)]\n"
+            + "\n".join(attachments)
+        )
+    else:
+        order.requirements = base_text
 
     db.session.commit()
 
-    # Determine changed fields for notification
-    real_changes = {}
-    for field, new_value in updates.items():
-        old_value = original.get(field)
-        if field == "deadline":
-            if old_value != new_value:
-                real_changes[field] = new_value
-        else:
-            if str(old_value) != str(new_value):
-                real_changes[field] = new_value
-    changed_fields = ", ".join(real_changes.keys()) if real_changes else None
+    # --------------------------------------------------
+    # Serialize response
+    # --------------------------------------------------
+    file_urls = [
+        url_for(
+            "orders.get_order_file",
+            order_id=order.id,
+            filename=f,
+            _external=True,
+        )
+        for f in attachments
+    ]
 
-    # -------------------------------------------------------------------
-    # SEND NOTIFICATION TO WRITER (if order already had an accepted bid)
-    # uses accepted_bid.user_id or accepted_bid.user relationship
-    # -------------------------------------------------------------------
-    accepted_bid = Bid.query.filter_by(order_id=order.id, status="accepted").first()
-    if accepted_bid:
-        writer = User.query.get(accepted_bid.user_id)
-        if writer:
-            send_notification_to_user(
-                email=writer.email,
-                title="Order Updated",
-                message=f"The client has updated the order ({order.id}). Updated fields: {changed_fields}.",
-                notif_type="order_update",
-                details={
-                    "order_id": order.id,
-                    "updated_fields": list(updates.keys()),
-                },
-                sender_id=order.client_id,
-            )
-
-    # --- Serialize response for frontend ---
-    def _serialize_order(order):
-        root_dir = current_app.config.get("ORDERS_FOLDER", "uploads/orders")
-        order_dir = os.path.join(root_dir, str(order.client_id), order.id)
-        file_urls = []
-        if os.path.exists(order_dir):
-            file_urls = [
-                current_app.url_for("orders.get_order_file", order_id=order.id, filename=f, _external=True)
-                for f in os.listdir(order_dir)
-            ]
-
-        return {
-            "id": order.id,
-            "title": order.title,
-            "description": order.description,
-            "detailedRequirements": order.requirements,
-            "category": order.subject,
-            "orderType": order.type,
-            "pages": order.pages,
-            "format": getattr(order, "format", ""),
-            "citationStyle": getattr(order, "citation_style", ""),
-            "language": getattr(order, "language", "en-us"),
-            "budget": order.budget,
-            "deadline": order.deadline.isoformat() if order.deadline else None,
-            "additionalNotes": getattr(order, "additional_notes", ""),
-            "tags": tags or [t.name for t in getattr(order, "tags", [])],
-            "preferredWriters": [
-                {"id": inv.writer.id, "name": inv.writer.full_name}
-                for inv in order.invitations
-            ],
-            "attachments": file_urls,
-            "status": order.status,
-            "progress": order.progress,
-            "createdAt": order.created_at.isoformat() + "Z",
-            "updatedAt": order.updated_at.isoformat() + "Z" if order.updated_at else None,
+    return success_response(
+        {
+            "order": {
+                "id": order.id,
+                "title": order.title,
+                "category": order.subject,
+                "orderType": order.type,
+                "pages": order.pages,
+                "clientBudget": float(order.client_budget),
+                "writerBudget": float(order.writer_budget),
+                "minimumAllowedBudget": order.minimum_allowed_budget,
+                "deadline": (
+                    order.deadline.astimezone(timezone.utc).isoformat()
+                    if order.deadline
+                    else None
+                ),
+                "description": order.description,
+                "requirements": order.requirements,
+                "additionalNotes": order.additional_notes,
+                "attachments": file_urls,
+                "status": order.status,
+                "progress": order.progress,
+                "updatedAt": (
+                    order.updated_at.isoformat() + "Z"
+                    if order.updated_at
+                    else None
+                ),
+            },
+            "message": "Order updated successfully",
         }
-
-    return success_response({
-        "order": _serialize_order(order),
-        "message": "Order updated successfully"
-    })
+    )
 
 
 # ------------------------------------------------------------
@@ -589,7 +638,11 @@ def decline_order(order_id):
     from app.models.declined_order import DeclinedOrder
     existing = DeclinedOrder.query.filter_by(order_id=order.id, writer_id=user.id).first()
     if existing:
-        return error_response("ALREADY_DECLINED", "You have already declined this order", status=400)
+        return error_response(
+            "ALREADY_DECLINED",
+            "You have already declined this order",
+            status=400
+        )
 
     try:
         data = request.get_json(silent=True) or {}
@@ -647,7 +700,11 @@ def cancel_order(order_id):
         return error_response("NOT_FOUND", "Order not found", status=404)
 
     if user.role != "client" or order.client_id != user.id:
-        return error_response("FORBIDDEN", "Only the client who created the order can cancel it", status=403)
+        return error_response(
+            "FORBIDDEN",
+            "Only the client who created the order can cancel it",
+            status=403
+        )
 
     data = request.get_json(silent=True) or {}
     reason = (data.get("reason") or "").strip()
@@ -701,17 +758,19 @@ def preview_pricing():
     category = data.get("category")
     order_type = data.get("orderType")
     pages = data.get("pages")
-    # Ensure we handle missing/invalid deadline gracefully
-    try:
-        deadline = datetime.fromisoformat(data["deadline"]).replace(tzinfo=timezone.utc)
-    except Exception:
-        deadline = None
+
+    deadline_utc = None
+    if data.get("deadline"):
+        parsed = parser.isoparse(data["deadline"])
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        deadline_utc = parsed.astimezone(timezone.utc)
 
     min_budget = calculate_minimum_price(
         category,
         order_type,
         pages,
-        deadline,
+        deadline_utc,
         datetime.now(timezone.utc)
     )
 

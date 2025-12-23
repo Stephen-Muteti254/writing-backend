@@ -1,4 +1,4 @@
-from flask import Blueprint, request
+from flask import Blueprint, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app.models.bid import Bid
@@ -100,11 +100,12 @@ def list_bids():
          .all()
     )
 
-    bids = [b.serialize() for b in items]
+    viewer = User.query.get(user_id)
 
-    print(f"query = {q}")
-
-    print(f"bids = {bids}")
+    bids = [
+        b.serialize(viewer_role=viewer.role)
+        for b in items
+    ]
 
     pagination = {
         "total": total,
@@ -133,7 +134,11 @@ def get_bid(bid_id):
     )
     if not bid:
         return error_response("NOT_FOUND", "Bid not found", status=404)
-    return success_response(bid.serialize())
+    viewer = User.query.get(uid)
+
+    return success_response(
+        bid.serialize(viewer_role=viewer.role)
+    )
 
 # ------------------------------------------------------------
 # POST /orders/<order_id>/bids — Place a bid
@@ -207,7 +212,7 @@ def create_bid(order_id):
     if data.get("message"):
         add_message(chat.id, uid, sanitize_message(data["message"]))
 
-    payload = bid.serialize()
+    payload = bid.serialize(viewer_role="writer")
     payload["chat_id"] = chat.id
 
     return success_response(payload, status=201)
@@ -229,6 +234,8 @@ def update_bid(bid_id):
     bid_amount = data.get("amount")
     message = data.get("message")
 
+    viewer = User.query.get(uid)
+
     if bid_amount is not None:
         try:
             bid_amount = float(bid_amount)
@@ -249,7 +256,9 @@ def update_bid(bid_id):
     bid.submitted_at = datetime.utcnow()
 
     db.session.commit()
-    return success_response(bid.serialize())
+    return success_response(
+        bid.serialize(viewer_role=viewer.role)
+    )
 
 
 # ------------------------------------------------------------
@@ -306,7 +315,12 @@ def list_bids_for_client():
 
     serialized = []
     for b in bids:
-        serialized.append(b.serialize(include_user_info = True))
+        serialized.append(
+            b.serialize(
+                include_user_info=True,
+                viewer_role="client"
+            )
+        )
 
     pagination = {
         "total": total,
@@ -476,7 +490,13 @@ def list_bids_for_order(order_id):
          .all()
     )
 
-    serialized = [b.serialize(include_user_info=True) for b in bids]
+    serialized = [
+        b.serialize(
+            include_user_info=True,
+            viewer_role="client"
+        )
+        for b in bids
+    ]
 
     pagination = {
         "total": total,

@@ -1,6 +1,7 @@
 from app.extensions import db
 from datetime import datetime
 import uuid
+from sqlalchemy.sql import func
 
 def gen_order_id():
     return f"ORD-{str(uuid.uuid4())[:8]}"
@@ -18,7 +19,6 @@ class Order(db.Model):
     subject = db.Column(db.String(255))
     type = db.Column(db.String(100))
     pages = db.Column(db.Integer, default=1)
-    deadline = db.Column(db.DateTime)
 
     client_budget = db.Column(db.Numeric(10, 2), nullable=False)
     writer_budget = db.Column(db.Numeric(10, 2), nullable=False)
@@ -44,8 +44,9 @@ class Order(db.Model):
     description = db.Column(db.Text)
     requirements = db.Column(db.Text)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, onupdate=datetime.utcnow)
+    deadline = db.Column(db.DateTime(timezone=True))
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+    updated_at = db.Column(db.DateTime(timezone=True), onupdate=func.now())
 
     tags = db.Column(db.ARRAY(db.String), default=list)
 

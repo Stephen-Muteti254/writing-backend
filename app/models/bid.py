@@ -39,6 +39,9 @@ class Bid(db.Model):
         return self.status
 
     def serialize(self, include_user_info=False, viewer_role=None):
+        if viewer_role not in ("writer", "client", "admin"):
+            raise ValueError("viewer_role is required to serialize bid amount correctly")
+
         data = {
             "id": self.id,
             "order_id": self.order_id,
@@ -60,3 +63,4 @@ class Bid(db.Model):
             })
 
         return data
+
