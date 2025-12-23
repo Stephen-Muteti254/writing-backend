@@ -257,6 +257,8 @@ def serialize_order(order, viewer):
 # ------------------------------------------------------------
 #  GET /orders/<order_id> — Get single order details
 # ------------------------------------------------------------
+from datetime import datetime, timezone
+
 @bp.route("/<order_id>", methods=["GET"])
 @jwt_required()
 def get_order(order_id):
@@ -272,8 +274,14 @@ def get_order(order_id):
 
     # Prevent writers from accessing expired orders
     if user.role == "writer" and order.deadline:
+        # Make deadline UTC-aware if it is naive
+        if order.deadline.tzinfo is None:
+            deadline_utc = order.deadline.replace(tzinfo=timezone.utc)
+        else:
+            deadline_utc = order.deadline
+
         now = datetime.now(timezone.utc)
-        if order.deadline < now:
+        if deadline_utc < now:
             return error_response(
                 "FORBIDDEN",
                 "This order is no longer available.",

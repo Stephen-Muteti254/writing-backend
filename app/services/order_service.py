@@ -27,7 +27,6 @@ def create_order(user, form_data, files=None):
         deadline=form_data.get("deadline"),
         client_budget=form_data.get("client_budget", 0),
         writer_budget=form_data.get("writer_budget", 0),
-        budget=float(form_data.get("budget", 0)),
         description=form_data.get("description"),
         requirements=form_data.get("requirements"),
         detailed_requirements=form_data.get("detailedRequirements"),

@@ -228,26 +228,39 @@ def update_bid(bid_id):
     if not bid:
         return error_response("NOT_FOUND", "Bid not found", status=404)
     if bid.status != "open":
-        return error_response("INVALID_OPERATION", "Cannot modify bid after it’s closed", status=400)
+        return error_response(
+            "INVALID_OPERATION",
+            "Cannot modify bid after it’s closed",
+            status=400
+        )
 
     data = request.get_json() or {}
-    bid_amount = data.get("amount")
+    bid_amount = data.get("amount", 0)
     message = data.get("message")
 
     viewer = User.query.get(uid)
+
+    writer_pct = current_app.config["WRITER_PAYOUT_PERCENTAGE"]
+    writer_amount = float(bid_amount)
+    client_amount = round(writer_amount / writer_pct, 2)
 
     if bid_amount is not None:
         try:
             bid_amount = float(bid_amount)
         except ValueError:
-            return error_response("VALIDATION_ERROR", "Bid amount must be a number", status=422)
+            return error_response(
+                "VALIDATION_ERROR",
+                "Bid amount must be a number",
+                status=422
+            )
 
         order = Order.query.get(bid.order_id)
-        if bid_amount > order.budget:
-            return error_response("VALIDATION_ERROR", "Bid cannot exceed order budget",
+        if bid_amount < order.writer_budget:
+            return error_response("VALIDATION_ERROR", "Bid cannot be less than order budget",
                                   {"field": "amount"}, status=422)
 
-        bid.bid_amount = bid_amount
+        bid.writer_amount = writer_amount
+        bid.client_amount = client_amount
 
     if message is not None:
         bid.message = message
