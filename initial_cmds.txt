@@ -1,0 +1,4 @@
+export FLASK_APP=wsgi.py
+flask db init
+flask db migrate -m "initial"
+flask db upgrade
