@@ -26,7 +26,7 @@ def create_app(config_name=None):
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     )
     bcrypt.init_app(app)
-    limiter.init_app(app)
+    # limiter.init_app(app)
 
     # register blueprints
     from app.routes.auth_routes import bp as auth_bp
