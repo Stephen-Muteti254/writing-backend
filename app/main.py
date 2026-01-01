@@ -1,6 +1,6 @@
 from flask import Flask, jsonify
 from .config import DevelopmentConfig, ProductionConfig
-from .extensions import db, migrate, jwt, ma, cors, limiter, bcrypt
+from .extensions import db, migrate, jwt, ma, cors, bcrypt
 import os
 from flask_cors import CORS
 
