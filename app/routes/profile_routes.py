@@ -1,4 +1,4 @@
-from flask import Blueprint, request
+from flask import Blueprint, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import User
 from app.extensions import db
@@ -10,35 +10,55 @@ from app.models.order import Order
 from app.models.writer_application import WriterApplication
 from app.services.profile_service import build_leaderboard
 
+import logging
+from werkzeug.utils import secure_filename
+import os, uuid
+from datetime import datetime
+from app.models.writer_profile import WriterProfile
+
+from sqlalchemy import func
+
+
 bp = Blueprint("profile", __name__, url_prefix="/api/v1/profile")
 
 
 def is_writer_profile_complete(user: User) -> tuple[bool, list[str]]:
+    if user.role != "writer":
+        return True, []
+
+    profile: WriterProfile | None = WriterProfile.query.filter_by(
+        user_id=user.id
+    ).first()
+
+    if not profile:
+        return False, [
+            "bio",
+            "profile_image",
+            "specializations",
+            "subjects",
+            "education",
+            "languages",
+        ]
+
     missing = []
 
-    if not user.full_name:
-        missing.append("full_name")
-    if not user.bio:
+    if not profile.bio or len(profile.bio.strip()) < 100:
         missing.append("bio")
-    if not user.country:
-        missing.append("country")
-    if not user.profile_image:
+
+    if not profile.profile_image:
         missing.append("profile_image")
 
-    app = user.writer_application
-    if not app:
-        missing.append("application")
-    else:
-        if app.status != "approved":
-            missing.append("application_approval")
-        if not app.specialization:
-            missing.append("specialization")
-        if not app.years_experience:
-            missing.append("years_experience")
-        if not app.education:
-            missing.append("education")
-        if not app.cv_file_path:
-            missing.append("cv")
+    if not profile.specializations:
+        missing.append("specializations")
+
+    if not profile.subjects:
+        missing.append("subjects")
+
+    if not profile.education:
+        missing.append("education")
+
+    if not profile.languages:
+        missing.append("languages")
 
     return len(missing) == 0, missing
 
@@ -48,13 +68,54 @@ def is_writer_profile_complete(user: User) -> tuple[bool, list[str]]:
 def get_profile():
     uid = get_jwt_identity()
     u = User.query.get(uid)
+
     if not u:
-        return error_response("NOT_FOUND", "User not found", status=404)
+        return error_response("NOT_FOUND", "User not found", 404)
+
+    profile = WriterProfile.query.filter_by(user_id=uid).first()
+
+    # ---- Orders ----
+    total_orders = db.session.query(func.count(Order.id))\
+        .filter(Order.writer_id == uid)\
+        .scalar() or 0
+
+    completed_orders = db.session.query(func.count(Order.id))\
+        .filter(
+            Order.writer_id == uid,
+            Order.status == "completed"
+        ).scalar() or 0
+
+    # ---- Earnings ----
+    total_earnings = db.session.query(
+        func.coalesce(func.sum(Order.writer_budget), 0)
+    ).filter(
+        Order.writer_id == uid,
+        Order.status == "completed"
+    ).scalar()
+
+    # ---- Reviews ----
+    avg_rating = db.session.query(
+        func.coalesce(func.avg(Review.rating), 0)
+    ).filter(
+        Review.reviewee_id == uid
+    ).scalar()
+
+    success_rate = round(
+        (completed_orders / total_orders * 100), 2
+    ) if total_orders else 0
 
     is_complete, missing = is_writer_profile_complete(u)
 
     return success_response({
         "user": u.to_dict(),
+        "writer_profile": profile.to_dict() if profile else None,
+        "metrics": {
+            "rating": round(float(avg_rating), 2),
+            "total_orders": total_orders,
+            "completed_orders": completed_orders,
+            "success_rate": success_rate,
+            "earnings": float(total_earnings or 0),
+        },
         "profile_completion": {
             "is_complete": is_complete,
             "missing_fields": missing
@@ -133,3 +194,118 @@ def get_writer_level(rank: int) -> str | None:
     if rank == 3:
         return "Silver Writer"
     return None
+
+
+logger = logging.getLogger(__name__)
+
+
+def save_profile_image(file, user_id):
+    root = current_app.config.get("PROFILES_FOLDER")
+    profile_root = os.path.join(root, str(user_id))
+    os.makedirs(profile_root, exist_ok=True)
+
+    filename = secure_filename(file.filename)
+    unique = f"{uuid.uuid4().hex}_{filename}"
+    path = os.path.join(profile_root, unique)
+    file.save(path)
+
+    return f"profiles/{user_id}/{unique}"
+
+
+@bp.route("", methods=["PUT"])
+@jwt_required()
+def upsert_profile():
+    uid = get_jwt_identity()
+    user = User.query.get(uid)
+
+    if not user:
+        return error_response("NOT_FOUND", "User not found", 404)
+
+    print(f"Profile update for user {uid}")
+    print(f"Content-Type: {request.content_type}")
+
+
+    print(f"request.content_type = {request.content_type}")
+    print(f"request.files = {request.files}")
+    print(f"request.form = {request.form}")
+
+    logger.info("Uploaded file keys: %s", list(request.files.keys()))
+
+    profile = WriterProfile.query.filter_by(user_id=uid).first()
+    if not profile:
+        profile = WriterProfile(
+            id=str(uuid.uuid4()),
+            user_id=uid,
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(profile)
+
+
+    # ---- Handle file upload ----
+    if request.files:
+        logger.info("Files received: %s", list(request.files.keys()))
+
+        image = request.files.get("profileImage")
+        if image and image.filename:
+            stored_path = save_profile_image(image, uid)
+            profile.profile_image = stored_path
+            user.profile_image = stored_path
+        else:
+            logger.warning("profileImage key missing or empty")
+
+    # ---- Handle JSON payload ----
+    else:
+        data = request.get_json() or {}
+        print(f"JSON payload: {data}")
+
+        if "bio" in data:
+            profile.bio = data["bio"]
+
+        if "specializations" in data:
+            profile.specializations = data["specializations"]
+
+        if "subjects" in data:
+            profile.subjects = data["subjects"]
+
+        if "education" in data:
+            profile.education = data["education"]
+
+        if "languages" in data:
+            profile.languages = data["languages"]
+
+    # ---- Recompute completion ----
+    is_complete, missing = is_writer_profile_complete(user)
+    profile.is_complete = is_complete
+    profile.profile_completion = round(
+        (6 - len(missing)) / 6 * 100, 2
+    )
+    profile.updated_at = datetime.utcnow()
+
+    db.session.commit()
+
+    return success_response({
+        "profile": {
+            "id": profile.id,
+            "profile_image": profile.profile_image,
+            "bio": profile.bio,
+            "specializations": profile.specializations,
+            "subjects": profile.subjects,
+            "education": profile.education,
+            "languages": profile.languages,
+        },
+        "profile_completion": {
+            "is_complete": is_complete,
+            "missing_fields": missing,
+            "percent": profile.profile_completion,
+        }
+    })
+
+from flask import send_from_directory
+
+@bp.route("/images/<path:filename>")
+def serve_profile_image(filename):
+    root = current_app.config["PROFILES_FOLDER"]
+    # remove leading "profiles/" if present
+    if filename.startswith("profiles/"):
+        filename = filename[len("profiles/"):]
+    return send_from_directory(root, filename)
