@@ -6,9 +6,9 @@ from app.models.order import Order
 from app.models.writer_application import WriterApplication
 from sqlalchemy import func, desc
 from sqlalchemy.orm import aliased
+from sqlalchemy import case
 
 def build_leaderboard(limit=None):
-    # Average rating per writer
     subquery = (
         db.session.query(
             Review.reviewee_id.label("writer_id"),
@@ -18,7 +18,14 @@ def build_leaderboard(limit=None):
         .subquery()
     )
 
-    rating_col = func.coalesce(subquery.c.avg_rating, 0).label("rating")
+    orders_count = func.count(Order.id)
+
+    rating_col = case(
+        # If no completed orders → default 5
+        (orders_count == 0, 5),
+        # Else use average rating (or 0 if NULL)
+        else_=func.coalesce(subquery.c.avg_rating, 0)
+    ).label("rating")
 
     q = (
         db.session.query(
@@ -27,7 +34,7 @@ def build_leaderboard(limit=None):
             User.profile_image,
             WriterApplication.specialization,
             rating_col,
-            func.count(Order.id).label("orders_completed"),
+            orders_count.label("orders_completed"),
         )
         .join(WriterApplication, WriterApplication.user_id == User.id)
         .outerjoin(subquery, subquery.c.writer_id == User.id)
@@ -36,8 +43,18 @@ def build_leaderboard(limit=None):
             (Order.writer_id == User.id) & (Order.status == "completed")
         )
         .filter(WriterApplication.status == "approved")
-        .group_by(User.id, User.full_name, User.profile_image, WriterApplication.specialization, subquery.c.avg_rating)
-        .order_by(desc(rating_col), desc(func.count(Order.id)), User.full_name)
+        .group_by(
+            User.id,
+            User.full_name,
+            User.profile_image,
+            WriterApplication.specialization,
+            subquery.c.avg_rating
+        )
+        .order_by(
+            desc(rating_col),
+            desc(orders_count),
+            User.full_name
+        )
     )
 
     if limit:

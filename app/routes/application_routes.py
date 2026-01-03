@@ -314,18 +314,19 @@ def serve_file(filename):
 # ------------------------------------------
 # 5. CONFIRM INITIAL DEPOSIT (ADMIN)
 # ------------------------------------------
-@bp.route("/<string:application_id>/confirm-deposit", methods=["POST"])
+@bp.route("/<string:user_id>/confirm-deposit", methods=["POST"])
 @jwt_required()
-def confirm_initial_deposit(application_id):
+def confirm_initial_deposit(user_id):
     uid = get_jwt_identity()
     admin_user = User.query.get(uid)
 
     if not admin_required(admin_user):
         return error_response("FORBIDDEN", "Admin privileges required", status=403)
 
-    application = WriterApplication.query.get(application_id)
+    # Find application by user_id (NOT application.id)
+    application = WriterApplication.query.filter_by(user_id=user_id).first()
     if not application:
-        return error_response("NOT_FOUND", "Application not found", status=404)
+        return error_response("NOT_FOUND", "Application not found for this user", status=404)
 
     if application.status != "approved":
         return error_response(
@@ -337,7 +338,7 @@ def confirm_initial_deposit(application_id):
     user = application.user
 
     try:
-        # Update user (THIS IS CRITICAL)
+        # Activate writer
         user.application_status = "paid_initial_deposit"
         user.account_status = "paid_initial_deposit"
         user.role = "writer"
@@ -346,8 +347,8 @@ def confirm_initial_deposit(application_id):
 
         return success_response({
             "message": "Initial deposit confirmed. Writer activated.",
-            "application_id": application.id,
             "user_id": user.id,
+            "application_id": application.id,
             "application_status": application.status,
             "account_status": user.account_status,
             "activated_at": datetime.utcnow().isoformat()
