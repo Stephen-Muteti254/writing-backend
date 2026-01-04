@@ -75,7 +75,7 @@ def list_orders():
         q = q.filter_by(client_id=user.id)
         
         if status:
-            if status == "in-progress":
+            if status == "in_progress":
                 q = q.filter(Order.status.in_([
                     "in_progress",
                     "submitted_for_review",

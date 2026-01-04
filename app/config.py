@@ -16,7 +16,7 @@ class Config:
 
     CORS_ORIGINS = os.getenv(
         "CORS_ORIGINS",
-        "https://academichubpro.com"
+        "http://localhost:8080"
     )
 
     RATELIMIT_HEADERS_ENABLED = True
