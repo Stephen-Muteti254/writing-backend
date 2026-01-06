@@ -9,6 +9,8 @@ from app.models.wallet_transaction import WalletTransaction
 from app.models.withdrawal_request import WithdrawalRequest
 from app.utils.response_formatter import success_response, error_response
 from app.services.notification_service import send_notification_to_user
+import uuid
+from datetime import timezone, datetime
 
 bp = Blueprint("admin_payments", __name__, url_prefix="/api/v1/admin")
 
@@ -45,6 +47,9 @@ def admin_list_withdrawals():
     limit = int(request.args.get("limit", 20))
     status = request.args.get("status")
     search = request.args.get("search")
+
+    if status == 'approved':
+        status = 'paid'
 
     q = WithdrawalRequest.query.join(User)
 
