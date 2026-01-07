@@ -98,15 +98,23 @@ def create_or_get_chat():
 @jwt_required()
 def list_chats():
     uid = get_jwt_identity()
+    
+    # Pagination
+    try:
+        page = int(request.args.get("page", 1))
+        limit = int(request.args.get("limit", 10))
+    except ValueError:
+        page = 1
+        limit = 10
+
+    offset = (page - 1) * limit
 
     chats_q = Chat.query.filter(
         (Chat.client_id == uid) | (Chat.writer_id == uid)
-    ).order_by(Chat.created_at.desc()).all()
+    ).order_by(Chat.created_at.desc()).offset(offset).limit(limit).all()
 
     out = []
-
     for chat in chats_q:
-        # Auto-clear expired warnings
         if chat.warning_active and chat.warning_expires_at and chat.warning_expires_at < datetime.utcnow():
             chat.warning_active = False
             chat.warning_risk = None
@@ -126,14 +134,12 @@ def list_chats():
             "id": chat.id,
             "order_id": chat.order_id,
             "order_title": chat.order.title if chat.order else None,
-
             "other_user": {
                 "id": other_user.id if other_user else None,
                 "name": other_user.full_name if other_user else None,
                 "avatar": other_user.profile_image if other_user else None,
                 "role": other_user.role if other_user else None,
             },
-
             "warning": (
                 {
                     "active": chat.warning_active,
@@ -144,13 +150,11 @@ def list_chats():
                 if chat.warning_active and chat.warning_for_user_id == uid
                 else None
             ),
-
             "last_message": {
                 "content": last_msg.content,
                 "sent_at": last_msg.created_at.isoformat() + "Z",
                 "is_read": last_msg.is_read,
             } if last_msg else None,
-
             "unread_count": Message.query.filter(
                 Message.chat_id == chat.id,
                 Message.sender_id != uid,
@@ -158,7 +162,13 @@ def list_chats():
             ).count()
         })
 
-    return success_response({"chats": out})
+    return success_response({
+        "chats": out,
+        "page": page,
+        "limit": limit,
+        "has_more": len(chats_q) == limit
+    })
+
 
 
 # -----------------------------------------------------------
