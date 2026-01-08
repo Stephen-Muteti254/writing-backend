@@ -419,3 +419,42 @@ def clear_chat_warning(chat_id):
     db.session.commit()
 
     return success_response({"cleared": True})
+
+
+@bp.route("/<chat_id>", methods=["GET"])
+@jwt_required()
+def get_chat(chat_id):
+    uid = get_jwt_identity()
+
+    chat = Chat.query.filter(
+        Chat.id == chat_id,
+        (Chat.client_id == uid) | (Chat.writer_id == uid)
+    ).first()
+
+    if not chat:
+        return error_response("NOT_FOUND", "Chat not found", 404)
+
+    other_user = chat.writer if chat.client_id == uid else chat.client
+
+    return success_response({
+        "chat": {
+            "id": chat.id,
+            "order_id": chat.order_id,
+            "order_title": chat.order.title if chat.order else None,
+            "other_user": {
+                "id": other_user.id,
+                "name": other_user.full_name,
+                "avatar": other_user.profile_image,
+            },
+            "warning": {
+                "active": chat.warning_active,
+                "risk": chat.warning_risk,
+                "message": chat.warning_message,
+            } if chat.warning_active else None,
+            "unread_count": Message.query.filter(
+                Message.chat_id == chat.id,
+                Message.sender_id != uid,
+                Message.is_read == False
+            ).count()
+        }
+    })

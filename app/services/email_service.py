@@ -91,3 +91,21 @@ def send_deposit_approved_email(user):
         )
     except Exception as e:
         print(f"Failed to send deposit approval email to {user.email}: {e}")
+
+# Bid Accepted
+# Account Suspension
+# Withdrawal
+# Order completed
+# Order cancellation
+
+# Support Chat (email/chat)
+# Client chat/message
+# OTP
+# Forgot
+# Show password
+# selected order chat
+# Order cancel
+# Suspended account(s) should be able to complete assigned orders
+# chat list order title
+# My Orders overdue orders
+# When inviting writers check name
