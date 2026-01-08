@@ -10,6 +10,13 @@ from app.utils.response_formatter import success_response, error_response
 from datetime import datetime
 import os 
 from flask import current_app
+from app.services.email_service import (
+    send_application_received_email,
+    send_application_approved_email,
+    send_application_rejected_email,
+    send_deposit_approved_email
+
+)
 
 bp = Blueprint("applications", __name__, url_prefix="/api/v1/applications")
 
@@ -26,6 +33,7 @@ def apply_writer():
         files = request.files
 
         app = create_writer_application(user, form_data, files)
+        send_application_received_email(user)
         return success_response({
             "success": True,
             "message": "Application submitted successfully",
@@ -189,8 +197,7 @@ def approve_application(application_id):
 
         db.session.commit()
 
-        # (Optional) Trigger email notification here
-        # send_application_status_email(user.email, "approved", feedback)
+        send_application_approved_email(user, feedback)
 
         return success_response({
             "message": "Application approved successfully",
@@ -238,8 +245,7 @@ def reject_application(application_id):
 
         db.session.commit()
 
-        # (Optional) Trigger email notification here
-        # send_application_status_email(user.email, "rejected", feedback)
+        send_application_rejected_email(user, feedback)
 
         return success_response({
             "message": "Application rejected",
@@ -344,6 +350,7 @@ def confirm_initial_deposit(user_id):
         user.role = "writer"
 
         db.session.commit()
+        send_deposit_approved_email(user)
 
         return success_response({
             "message": "Initial deposit confirmed. Writer activated.",

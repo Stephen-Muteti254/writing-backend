@@ -1,0 +1,17 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>Thank you for joining <strong>{{ company_name }}</strong>. Please confirm your email address to activate your account.</p>
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ verify_url }}" class="btn-primary">Verify Email Address</a>
+</div>
+
+<div class="notice">
+  This verification link will expire in <strong>1 hour</strong>.
+</div>
+
+<p>If you didn't create an account, you can safely ignore this email.</p>
+{% endblock %}

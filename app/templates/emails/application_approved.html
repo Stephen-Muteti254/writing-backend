@@ -1,0 +1,22 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>We are pleased to inform you that your writer application has been <strong>approved</strong>. Welcome to the {{ company_name }} team!</p>
+
+{% if feedback %}
+<div class="notice" style="margin:16px 0;">
+  <strong>Feedback from our team:</strong>
+  <p style="font-style:italic;">{{ feedback }}</p>
+</div>
+{% endif %}
+
+<p>To complete your onboarding, please proceed with the initial activation deposit.</p>
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ onboarding_url }}" class="btn-primary">Complete Onboarding</a>
+</div>
+
+<p>Best regards,<br /><strong>The Editorial Team</strong></p>
+{% endblock %}

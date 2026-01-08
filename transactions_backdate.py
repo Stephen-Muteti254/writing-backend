@@ -17,7 +17,7 @@ USERS = [
 
 # make window datetimes UTC-aware
 WINDOW_BEFORE_START = datetime(2025, 11, 1, 9, 0, 0, tzinfo=timezone.utc)
-WINDOW_AFTER_END    = datetime(2026, 1, 10, 18, 0, 0, tzinfo=timezone.utc)
+WINDOW_AFTER_END    = datetime(2026, 1, 7, 18, 0, 0, tzinfo=timezone.utc)
 
 # -------------------------------------------------------------------
 # HELPERS

@@ -4,6 +4,7 @@ from app.extensions import db
 from app.models.user import User
 from app.utils.response_formatter import success_response, error_response
 from sqlalchemy import or_, and_
+from app.services.email_service import send_deposit_approved_email
 
 bp = Blueprint("admin_writers", __name__, url_prefix="/api/v1/admin/writers")
 
@@ -63,6 +64,9 @@ def approve_deposit(user_id):
     writer.is_verified = True  # allow access to orders
 
     db.session.commit()
+
+    # Send email notification
+    send_deposit_approved_email(writer)
 
     return success_response({
         "message": "Writer deposit verified. Account activated.",

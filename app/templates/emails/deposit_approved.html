@@ -1,0 +1,20 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p><strong>Congratulations!</strong> We have successfully verified and approved your initial deposit.</p>
+
+<div style="background-color:#dcfce7;padding:16px;border-radius:8px; margin:16px 0;">
+  <p><strong>Account Status:</strong> Active</p>
+  <p>You now have full platform access.</p>
+</div>
+
+<p>Your account is now active, and you can start accessing orders and begin completing assignments. Please ensure your profile is complete to make the most of our platform.</p>
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ dashboard_url }}" class="btn-primary">Go to Dashboard</a>
+</div>
+
+<p>Thank you for joining {{ company_name }}. We look forward to seeing your contributions.</p>
+{% endblock %}

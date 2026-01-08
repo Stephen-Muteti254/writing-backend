@@ -4,8 +4,15 @@ from .extensions import db, migrate, jwt, ma, cors, bcrypt
 import os
 from flask_cors import CORS
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
 def create_app(config_name=None):
-    app = Flask(__name__, instance_relative_config=False)
+    app = Flask(
+        __name__,
+        instance_relative_config=False,
+        template_folder=os.path.join(BASE_DIR, "templates")
+    )
+
     env = os.getenv("FLASK_ENV", "development")
     if env == "production":
         app.config.from_object(ProductionConfig)

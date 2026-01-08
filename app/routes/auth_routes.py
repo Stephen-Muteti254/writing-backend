@@ -1,10 +1,13 @@
-from flask import Blueprint, request, current_app
+from flask import Blueprint, request, current_app, render_template
 from app.services.auth_service import register_user, authenticate_user, generate_tokens_for_user
 from app.utils.response_formatter import success_response, error_response
 from app.extensions import db, jwt
 from app.models.user import User
 from flask_jwt_extended import jwt_required, get_jwt_identity, unset_jwt_cookies
 from app.utils.auth_utils import hash_password, check_password
+from app.utils.email_tokens import generate_email_verification_token
+from app.services.email_service import send_verification_email
+from app.utils.email_tokens import decode_email_verification_token
 
 bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
@@ -26,6 +29,8 @@ def register():
 
     try:
         user = register_user(email, password, full_name, role=role, country=country)
+        token = generate_email_verification_token(user.id)
+        send_verification_email(user, token)
         access, refresh = generate_tokens_for_user(user)
         return success_response({
             "user": {
@@ -97,27 +102,40 @@ def me():
 
 @bp.route("/verify-email", methods=["POST"])
 def verify_email():
-    token = request.json.get("token")
+    data = request.get_json() or {}
+    token = data.get("token")
 
     if not token:
-        return jsonify({"error": "Missing token"}), 400
+        return error_response(
+            code="MISSING_TOKEN",
+            message="Verification token is required",
+            status=400
+        )
 
     try:
         user_id = decode_email_verification_token(token)
-        user = User.query.get(user_id)
+    except Exception:
+        return error_response(
+            code="INVALID_TOKEN",
+            message="Verification link is invalid or expired",
+            status=400
+        )
 
-        if not user:
-            return jsonify({"error": "User not found"}), 404
+    user = User.query.get(user_id)
+    print(f"user_id = {user_id}")
+    if not user:
+        return error_response(
+            code="USER_NOT_FOUND",
+            message="User not found",
+            status=404
+        )
 
-        if user.is_verified:
-            return jsonify({"verified": True}), 200
-
+    if not user.is_verified:
         user.is_verified = True
         db.session.commit()
 
-        return jsonify({"verified": True}), 200
-
-    except Exception:
-        return jsonify({
-            "error": "Invalid or expired verification link"
-        }), 400
+    return success_response(
+        payload={"verified": True},
+        message="Email successfully verified",
+        status=200
+    )

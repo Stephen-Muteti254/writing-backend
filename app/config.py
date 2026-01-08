@@ -35,6 +35,16 @@ class Config:
     PAYSTACK_SECRET_KEY = "sk_live_e3c9231206431254561a88cd7d12b50098fe21f6"
     PAYSTACK_PUBLIC_KEY = "pk_live_9b05dd85fd1beb35e3feb8571ae5c8f5abbc39f8"
 
+    EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME")
+    EMAIL_FROM_ADDRESS = os.getenv("EMAIL_FROM_ADDRESS")
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "https://academichubpro.com")
+
+    ZOHO_SMTP_HOST = os.getenv("ZOHO_SMTP_HOST", "smtppro.zoho.com")
+    ZOHO_SMTP_PORT = int(os.getenv("ZOHO_SMTP_PORT", 465))
+    ZOHO_APP_PASSWORD = os.getenv("ZOHO_APP_PASSWORD")
+
+    EMAIL_VERIFY_EXPIRES = int(os.getenv("EMAIL_VERIFY_EXPIRES", 3600))
+
 class DevelopmentConfig(Config):
     DEBUG = True
 
