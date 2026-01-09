@@ -21,8 +21,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, and_
 from app.services.wallet_service import safe_debit_wallet
 from app.services.email_service import (
-    send_bid_accepted_email,
-    send_bid_rejected_email
+    send_bid_accepted_email
 )
 
 bp = Blueprint("bids", __name__, url_prefix="/api/v1")
@@ -386,6 +385,8 @@ def client_update_bid_status(bid_id):
 
     if derived_status not in ["open", "pending"]:
         return error_response("INVALID_OPERATION", "Bid already processed", status=400)
+    
+    writer = bid.user
 
     # ------------------------------------------------
     # Process ACCEPT
@@ -457,7 +458,7 @@ def client_update_bid_status(bid_id):
     # ------------------------------------------------
     elif action == "reject":
         bid.status = "rejected"
-        send_bid_rejected_email(writer, bid.order)
+        # send_bid_rejected_email(writer, bid.order)
 
     else:
         return error_response("VALIDATION_ERROR", "Invalid action (use 'accept' or 'reject')", status=422)
@@ -467,7 +468,6 @@ def client_update_bid_status(bid_id):
     # -------------------------------------------------------------------
     # SEND NOTIFICATION TO WRITER (uses bid.user and bid.user_id)
     # -------------------------------------------------------------------
-    writer = bid.user
     if writer:
         if action == "accept":
             title = "Your Bid Was Accepted"

@@ -110,22 +110,22 @@ def send_bid_accepted_email(user, order):
         print(f"Failed to send bid accepted email to {user.email}: {e}")
 
 
-def send_bid_rejected_email(user, order):
-    try:
-        html = render_template(
-            "emails/bid_rejected.html",
-            full_name=user.full_name,
-            order_title=order.title,
-            company_name=COMPANY_NAME,
-            year=datetime.utcnow().year
-        )
-        send_email(
-            to=user.email,
-            subject=f"Your bid was rejected for {order.title}",
-            html=html
-        )
-    except Exception as e:
-        print(f"Failed to send bid rejected email to {user.email}: {e}")
+# def send_bid_rejected_email(user, order):
+#     try:
+#         html = render_template(
+#             "emails/bid_rejected.html",
+#             full_name=user.full_name,
+#             order_title=order.title,
+#             company_name=COMPANY_NAME,
+#             year=datetime.utcnow().year
+#         )
+#         send_email(
+#             to=user.email,
+#             subject=f"Your bid was rejected for {order.title}",
+#             html=html
+#         )
+#     except Exception as e:
+#         print(f"Failed to send bid rejected email to {user.email}: {e}")
 
 
 def send_withdrawal_paid_email(user, amount):
