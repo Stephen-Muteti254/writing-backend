@@ -80,13 +80,29 @@ def create_or_get_chat():
     # Create or fetch existing chat
     chat = get_or_create_chat(order_id, client_id, writer_id)
 
+    last_msg = (
+        Message.query.filter_by(chat_id=chat.id)
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+
     return success_response({
         "chat": {
             "id": chat.id,
             "order_id": chat.order_id,
             "client_id": chat.client_id,
             "writer_id": chat.writer_id,
-            "created_at": chat.created_at.isoformat() + "Z"
+            "created_at": chat.created_at.isoformat() + "Z",
+            "last_message": {
+                "content": last_msg.content,
+                "sent_at": last_msg.created_at.isoformat() + "Z",
+                "is_read": last_msg.is_read,
+            } if last_msg else None,
+            "unread_count": Message.query.filter(
+                Message.chat_id == chat.id,
+                Message.sender_id != uid,
+                Message.is_read == False
+            ).count()
         }
     })
 

@@ -24,6 +24,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from app.services.wallet_service import has_sufficient_balance
 from sqlalchemy import func
 
+from app.services.email_service import (
+    send_order_cancelled_email
+)
+
 def format_money(value):
     if value is None:
         return None
@@ -819,6 +823,8 @@ def cancel_order(order_id):
                 },
                 sender_id=order.client_id,
             )
+
+            send_order_cancelled_email(writer, order, reason)
 
     return success_response({
         "orderId": order.id,

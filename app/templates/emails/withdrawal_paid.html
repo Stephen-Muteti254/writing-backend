@@ -1,0 +1,19 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>
+  Your withdrawal request of <strong>${{ amount }}</strong> has been <strong>processed and paid</strong>.
+</p>
+
+<div class="notice" style="margin:16px 0;">
+  The funds should reflect in your chosen payout method shortly.
+</div>
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ dashboard_url }}" class="btn-primary">View Wallet</a>
+</div>
+
+<p>Best regards,<br /><strong>{{ company_name }} Team</strong></p>
+{% endblock %}

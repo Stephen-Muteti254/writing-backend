@@ -92,20 +92,113 @@ def send_deposit_approved_email(user):
     except Exception as e:
         print(f"Failed to send deposit approval email to {user.email}: {e}")
 
-# Bid Accepted
-# Account Suspension
-# Withdrawal
-# Order completed
-# Order cancellation
+def send_bid_accepted_email(user, order):
+    try:
+        html = render_template(
+            "emails/bid_accepted.html",
+            full_name=user.full_name,
+            order_title=order.title,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year
+        )
+        send_email(
+            to=user.email,
+            subject=f"Your bid was accepted for {order.title}",
+            html=html
+        )
+    except Exception as e:
+        print(f"Failed to send bid accepted email to {user.email}: {e}")
 
-# Support Chat (email/chat)
-# Client chat/message
-# OTP
-# Forgot
-# Show password
-# selected order chat
-# Order cancel
-# Suspended account(s) should be able to complete assigned orders
-# chat list order title
-# My Orders overdue orders
-# When inviting writers check name
+
+def send_bid_rejected_email(user, order):
+    try:
+        html = render_template(
+            "emails/bid_rejected.html",
+            full_name=user.full_name,
+            order_title=order.title,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year
+        )
+        send_email(
+            to=user.email,
+            subject=f"Your bid was rejected for {order.title}",
+            html=html
+        )
+    except Exception as e:
+        print(f"Failed to send bid rejected email to {user.email}: {e}")
+
+
+def send_withdrawal_paid_email(user, amount):
+    try:
+        html = render_template(
+            "emails/withdrawal_paid.html",
+            full_name=user.full_name,
+            amount=amount,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year
+        )
+        send_email(
+            to=user.email,
+            subject=f"Your withdrawal of ${amount:.2f} has been paid",
+            html=html
+        )
+    except Exception as e:
+        print(f"Failed to send withdrawal paid email to {user.email}: {e}")
+
+
+def send_withdrawal_rejected_email(user, amount, reason=None):
+    reason_text = f": {reason}" if reason else ""
+    try:
+        html = render_template(
+            "emails/withdrawal_rejected.html",
+            full_name=user.full_name,
+            amount=amount,
+            reason_text=reason_text,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year
+        )
+        send_email(
+            to=user.email,
+            subject=f"Your withdrawal of ${amount:.2f} was rejected",
+            html=html
+        )
+    except Exception as e:
+        print(f"Failed to send withdrawal rejected email to {user.email}: {e}")
+
+
+def send_order_cancelled_email(user, order, reason=None):
+    try:
+        html = render_template(
+            "emails/order_cancelled.html",
+            full_name=user.full_name,
+            order_title=order.title,
+            reason=reason,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year
+        )
+        send_email(
+            to=user.email,
+            subject=f"Order {order.title} has been cancelled",
+            html=html
+        )
+    except Exception as e:
+        print(f"Failed to send order cancelled email to {user.email}: {e}")
+
+
+def send_order_completed_email(user, order, amount):
+    try:
+        html = render_template(
+            "emails/order_completed.html",
+            full_name=user.full_name,
+            order_title=order.title,
+            amount=amount,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year
+        )
+        send_email(
+            to=user.email,
+            subject=f"Order {order.title} marked as completed",
+            html=html
+        )
+    except Exception as e:
+        print(f"Failed to send order completed email to {user.email}: {e}")

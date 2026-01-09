@@ -11,6 +11,10 @@ from app.utils.response_formatter import success_response, error_response
 from app.services.notification_service import send_notification_to_user
 import uuid
 from datetime import timezone, datetime
+from app.services.email_service import (
+    send_withdrawal_paid_email,
+    send_withdrawal_rejected_email
+)
 
 bp = Blueprint("admin_payments", __name__, url_prefix="/api/v1/admin")
 
@@ -145,6 +149,8 @@ def admin_approve_withdrawal(wid):
         notif_type="success"
     )
 
+    send_withdrawal_paid_email(wr.user, wr.amount)
+
     return success_response({"message": "Withdrawal approved and paid"})
 
 
@@ -180,5 +186,7 @@ def admin_reject_withdrawal(wid):
         ),
         notif_type="error"
     )
+
+    send_withdrawal_rejected_email(wr.user, wr.amount, reason)
 
     return success_response({"message": "Withdrawal rejected"})

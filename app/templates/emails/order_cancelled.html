@@ -1,0 +1,21 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>
+  The client has cancelled order <strong>{{ order_title }}</strong>.
+</p>
+
+{% if reason %}
+<div class="notice" style="margin:16px 0;">
+  <strong>Reason:</strong> {{ reason }}
+</div>
+{% endif %}
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ dashboard_url }}" class="btn-primary">View Orders</a>
+</div>
+
+<p>Best regards,<br /><strong>{{ company_name }} Team</strong></p>
+{% endblock %}

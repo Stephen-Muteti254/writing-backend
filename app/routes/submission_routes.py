@@ -28,6 +28,9 @@ from app.utils.response_formatter import (
 )
 from datetime import datetime
 import uuid
+from app.services.email_service import (
+    send_order_completed_email
+)
 
 bp = Blueprint(
     "submissions",
@@ -244,6 +247,9 @@ def complete_order(order_id):
         wallet.balance += order.writer_budget
 
         db.session.commit()
+
+        send_order_completed_email(User.query.get(order.writer_id), order, order.writer_budget)
+
         return success_response(message=f"Order {order.id} marked as complete")
 
     except Exception as e:

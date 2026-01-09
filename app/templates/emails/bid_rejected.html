@@ -1,0 +1,19 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>
+  Your bid for order <strong>{{ order_title }}</strong> has been <strong>rejected</strong> by the client.
+</p>
+
+<div class="notice" style="margin:16px 0;">
+  Keep applying to other orders! You can find available orders on your dashboard.
+</div>
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ dashboard_url }}" class="btn-primary">View Orders</a>
+</div>
+
+<p>Best regards,<br /><strong>{{ company_name }} Team</strong></p>
+{% endblock %}

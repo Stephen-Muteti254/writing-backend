@@ -1,0 +1,19 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>
+  Your withdrawal request of <strong>${{ amount }}</strong> was <strong>rejected</strong>{{ reason_text }}.
+</p>
+
+<div class="notice" style="margin:16px 0;">
+  Please contact support if you have any questions.
+</div>
+
+<div style="text-align:center; margin:24px 0;">
+  <a href="{{ dashboard_url }}" class="btn-primary">View Wallet</a>
+</div>
+
+<p>Best regards,<br /><strong>{{ company_name }} Team</strong></p>
+{% endblock %}
