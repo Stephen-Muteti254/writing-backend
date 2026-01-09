@@ -319,14 +319,6 @@ def get_order(order_id):
         else:
             deadline_utc = order.deadline
 
-        now = datetime.now(timezone.utc)
-        if deadline_utc < now:
-            return error_response(
-                "FORBIDDEN",
-                "This order is no longer available.",
-                status=403
-            )
-
     return success_response(serialize_order(order, user))
 
 
