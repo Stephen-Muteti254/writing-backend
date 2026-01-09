@@ -184,3 +184,32 @@ def send_order_completed_email(user, order, amount):
         )
     except Exception as e:
         print(f"Failed to send order completed email to {user.email}: {e}")
+
+
+OTP_EXPIRY_MINUTES = 10
+
+def send_login_otp_email(user, otp):
+    try:
+        html = render_template(
+            "emails/login_otp.html",
+            full_name=user.full_name,
+            otp=otp,
+            expires_in_minutes=OTP_EXPIRY_MINUTES,
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year,
+        )
+
+        send_email(
+            to=user.email,
+            subject="Your Academic Hub login code",
+            html=html,
+        )
+
+        current_app.logger.info(
+            f"Login OTP email sent to user_id={user.id}"
+        )
+
+    except Exception as e:
+        current_app.logger.error(
+            f"Failed to send OTP email to user_id={user.id}: {str(e)}"
+        )

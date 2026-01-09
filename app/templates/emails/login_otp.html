@@ -1,0 +1,57 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+<p>Hello <strong>{{ full_name }}</strong>,</p>
+
+<p>
+  We detected a login attempt to your <strong>{{ company_name }}</strong> account.
+  To continue signing in, please use the one-time verification code below:
+</p>
+
+<div style="text-align:center; margin:32px 0;">
+  <div
+    style="
+      display:inline-block;
+      background:#f1f5f9;
+      padding:16px 32px;
+      border-radius:8px;
+      font-size:28px;
+      font-weight:700;
+      letter-spacing:6px;
+      color:#1e293b;
+    "
+  >
+    {{ otp }}
+  </div>
+</div>
+
+<p style="text-align:center; font-size:13px; color:#475569;">
+  This code will expire in <strong>{{ expires_in_minutes }} minutes</strong>.
+</p>
+
+<div
+  style="
+    margin:24px 0;
+    background:#fef2f2;
+    padding:16px;
+    border-radius:8px;
+    font-size:13px;
+    color:#991b1b;
+  "
+>
+  <strong>Security Notice</strong>
+  <p style="margin:8px 0 0;">
+    If you did not attempt to log in, please change your password immediately
+    and contact our support team.
+  </p>
+</div>
+
+<p>
+  Never share this code with anyone. Our team will never ask for your OTP.
+</p>
+
+<p style="margin-top:32px;">
+  Best regards,<br />
+  <strong>{{ company_name }} Security Team</strong>
+</p>
+{% endblock %}

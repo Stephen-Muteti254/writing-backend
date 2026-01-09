@@ -6,9 +6,18 @@ from app.models.user import User
 from flask_jwt_extended import jwt_required, get_jwt_identity, unset_jwt_cookies
 from app.utils.auth_utils import hash_password, check_password
 from app.utils.email_tokens import generate_email_verification_token
-from app.services.email_service import send_verification_email
+from app.services.email_service import (
+    send_verification_email,
+    send_login_otp_email
+)
 from app.utils.email_tokens import decode_email_verification_token
-
+from app.models.login_otp import LoginOTP
+from app.utils.otp import (
+    generate_otp,
+    hash_otp,
+    verify_otp,
+    otp_expiry
+    )
 bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
 @bp.route("/register", methods=["POST"])
@@ -53,31 +62,59 @@ def login():
     data = request.get_json() or {}
     email = data.get("email")
     password = data.get("password")
-    if not email or not password:
-        return error_response("VALIDATION_ERROR", "Missing fields", status=422)
 
-    try:
-        user = authenticate_user(email, password)
-        access, refresh = generate_tokens_for_user(user)
+    user = authenticate_user(email, password)
 
-        response_data = {
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "role": user.role,
-                "application_status": getattr(user, "application_status", "not_applied"),
-                "is_verified": getattr(user, "is_verified", False),
-                "has_made_activation_deposit": getattr(user, "has_made_activation_deposit", False),
-            },
-            "access_token": access,
-            "refresh_token": refresh,
-        }
+    otp = generate_otp()
+    otp_record = LoginOTP(
+        user_id=user.id,
+        otp_hash=hash_otp(otp),
+        expires_at=otp_expiry(),
+    )
 
-        return success_response(response_data)
-    except Exception as e:
-        print(f"error = {str(e)}")
-        return error_response("AUTH_ERROR", "Invalid credentials", status=401)
+    db.session.add(otp_record)
+    db.session.commit()
+
+    send_login_otp_email(user, otp)
+
+    return success_response({
+        "otp_required": True,
+        "otp_session_id": otp_record.id,
+        "message": "OTP sent to your email"
+    })
+
+
+@bp.route("/login/verify-otp", methods=["POST"])
+def verify_login_otp():
+    data = request.get_json() or {}
+    otp = data.get("otp")
+    session_id = data.get("otp_session_id")
+
+    record = LoginOTP.query.get(session_id)
+
+    if not record or record.used or record.is_expired():
+        return error_response("INVALID_OTP", "OTP expired or invalid", 400)
+
+    if record.attempts >= 5:
+        return error_response("LOCKED", "Too many attempts", 403)
+
+    if not verify_otp(otp, record.otp_hash):
+        record.attempts += 1
+        db.session.commit()
+        return error_response("INVALID_OTP", "Incorrect OTP", 400)
+
+    record.used = True
+    db.session.commit()
+
+    user = User.query.get(record.user_id)
+    access, refresh = generate_tokens_for_user(user)
+
+    return success_response({
+        "access_token": access,
+        "refresh_token": refresh,
+        "user": user.to_dict(),
+    })
+
 
 @bp.route("/logout", methods=["POST"])
 @jwt_required()
