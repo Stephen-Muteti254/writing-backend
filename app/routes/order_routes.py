@@ -65,7 +65,7 @@ def list_orders():
     q = Order.query
 
     # Exclude expired orders for writers
-    if user.role == "writer":
+    if user.role == "writer" and assigned_to != "me":
         now = datetime.now(timezone.utc)
         q = q.filter(
             or_(
