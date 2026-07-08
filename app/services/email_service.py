@@ -347,3 +347,44 @@ def send_order_restored_email(user, order, restored_status):
         current_app.logger.error(
             f"Failed to send order restored email to {user.email}: {e}"
         )
+
+
+def send_new_order_admin_notification(order, client):
+    """
+    Notify every admin and super_admin whenever a new order is created.
+    """
+
+    admins = User.query.filter(
+        User.role.in_(["admin", "super_admin"])
+    ).all()
+
+    if not admins:
+        return
+
+    dashboard_url = (
+        f"{current_app.config['FRONTEND_URL']}/admin/orders/{order.id}"
+    )
+
+    for admin in admins:
+        html = render_template(
+            "emails/new_order_admin_notification.html",
+            title="New Order Submitted",
+            company_name=COMPANY_NAME,
+            year=datetime.utcnow().year,
+            admin_name=admin.full_name or "Administrator",
+            client_name=client.full_name,
+            client_email=client.email,
+            order=order,
+            dashboard_url=dashboard_url,
+        )
+
+        try:
+            send_email(
+                to=admin.email,
+                subject=f"New Order Submitted - {order.title}",
+                html=html,
+            )
+        except Exception as e:
+            print(
+                f"Failed sending admin notification to {admin.email}: {e}"
+            )

@@ -17,6 +17,7 @@ from app.services.notification_service import (
     send_notification_to_user,
     send_notification_to_user_without_email
 )
+
 from sqlalchemy import or_, cast
 from sqlalchemy.types import String
 from app.services.order_service import (
@@ -30,8 +31,9 @@ from sqlalchemy import func
 
 from app.services.email_service import (
     send_order_cancelled_email,
-    send_order_restored_email
+    send_order_restored_email,
 )
+
 from app.models.submission import Submission
 
 def format_money(value):

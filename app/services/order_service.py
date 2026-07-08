@@ -4,7 +4,9 @@ from datetime import timezone, datetime
 from flask import current_app, url_for, send_file, jsonify
 from werkzeug.utils import secure_filename
 import os, uuid
-
+from app.services.email_service import (
+    send_new_order_admin_notification,
+)
 
 def save_uploaded_file(file, upload_dir):
     """Helper to securely save an uploaded file and return filename + path."""
@@ -72,6 +74,11 @@ def create_order(user, form_data, files=None):
         file_list = "\n".join(saved_files)
         order.requirements = f"{existing}\n\n[Attachments: {len(saved_files)} file(s)]\n{file_list}"
         db.session.commit()
+
+    try:
+        send_new_order_admin_notification(order, user)
+    except Exception as e:
+        print(f"Failed to notify admins: {e}")
 
     return order
 

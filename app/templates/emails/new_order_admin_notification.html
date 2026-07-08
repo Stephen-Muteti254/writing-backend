@@ -1,0 +1,55 @@
+{% extends "emails/base.html" %}
+
+{% block content %}
+
+<p>Hello <strong>{{ admin_name }}</strong>,</p>
+
+<p>
+A new order has just been submitted and is awaiting writer assignment.
+</p>
+
+<div class="notice" style="margin:20px 0; text-align:left;">
+
+<strong>Order Details</strong>
+
+<br><br>
+
+<strong>Order ID:</strong> {{ order.id }}<br>
+<strong>Title:</strong> {{ order.title }}<br>
+<strong>Category:</strong> {{ order.subject }}<br>
+<strong>Type:</strong> {{ order.type }}<br>
+<strong>Pages:</strong> {{ order.pages }}<br>
+<strong>Budget:</strong> ${{ "%.2f"|format(order.client_budget) }}<br>
+<strong>Deadline:</strong> {{ order.deadline.strftime("%d %b %Y %I:%M %p UTC") if order.deadline else "N/A" }}
+
+<br><br>
+
+<strong>Submitted By</strong>
+
+<br><br>
+
+<strong>Name:</strong> {{ client_name }}<br>
+<strong>Email:</strong> {{ client_email }}
+
+</div>
+
+<p>
+Please review the order and assign a qualified writer as soon as possible.
+</p>
+
+<div style="text-align:center;margin:28px 0;">
+
+<a href="{{ dashboard_url }}" class="btn-primary">
+Review Order
+</a>
+
+</div>
+
+<p>
+
+Regards,<br>
+<strong>{{ company_name }}</strong>
+
+</p>
+
+{% endblock %}
