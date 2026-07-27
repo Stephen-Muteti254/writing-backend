@@ -8,9 +8,25 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
-    JWT_TOKEN_LOCATION = ["headers"]
+    JWT_TOKEN_LOCATION = json.loads(
+        os.getenv("JWT_TOKEN_LOCATION", '["cookies"]')
+    )
+
+    # JWT_TOKEN_LOCATION = ["headers"]
     JWT_HEADER_NAME = "Authorization"
     JWT_HEADER_TYPE = "Bearer"
+
+    JWT_COOKIE_SECURE = os.getenv("JWT_COOKIE_SECURE", "False") == "True"
+
+    JWT_COOKIE_HTTPONLY = os.getenv("JWT_COOKIE_HTTPONLY", True)
+
+    JWT_COOKIE_SAMESITE = os.getenv("JWT_COOKIE_SAMESITE", "Lax")
+
+    JWT_ACCESS_COOKIE_PATH = os.getenv("JWT_ACCESS_COOKIE_PATH", "/")
+
+    JWT_REFRESH_COOKIE_PATH = os.getenv("JWT_REFRESH_COOKIE_PATH", "/")
+
+    JWT_COOKIE_DOMAIN = os.getenv("JWT_COOKIE_DOMAIN")
 
     SQLALCHEMY_DATABASE_URI = (
         f"{os.getenv('DATABASE_URL')}"

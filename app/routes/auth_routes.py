@@ -12,7 +12,12 @@ from app.services.auth_service import (
 from app.utils.response_formatter import success_response, error_response
 from app.extensions import db, jwt
 from app.models.user import User
+
 from flask_jwt_extended import (
+    create_access_token,
+    create_refresh_token,
+    set_access_cookies,
+    set_refresh_cookies,
     jwt_required,
     get_jwt_identity,
     unset_jwt_cookies
@@ -130,23 +135,32 @@ def verify_login_otp():
 
     user = User.query.get(record.user_id)
     access, refresh = generate_tokens_for_user(user)
-
-    return success_response({
-        "access_token": access,
-        "refresh_token": refresh,
-        "user": user.to_dict(),
+    
+    response, status = success_response({
+        "user": user.to_dict()
     })
+
+    print(f"response before cookie attach {response}")
+
+    set_access_cookies(response, access)
+    set_refresh_cookies(response, refresh)
+
+    print(f" response after cookie attach {response}")
+
+    return response, status
 
 
 @bp.route("/logout", methods=["POST"])
 @jwt_required()
 def logout():
-    resp = success_response({"message": "Successfully logged out"})
-    # unset cookies if you were using cookies; client should discard tokens.
-    response, status = resp
-    # NOTE: flask-jwt-extended provides helper to unset cookies if stored in cookies
-    # Here we'll just return message; clients should delete tokens client-side
-    return success_response({"message": "Successfully logged out"})
+
+    response, status = success_response({
+        "message": "Successfully logged out"
+    })
+
+    unset_jwt_cookies(response)
+
+    return response, status
 
 @bp.route("/me", methods=["GET"])
 @jwt_required()
