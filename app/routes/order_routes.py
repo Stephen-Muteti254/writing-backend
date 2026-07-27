@@ -930,6 +930,7 @@ def restore_order(order_id):
 @bp.route("/pricing/preview", methods=["POST"])
 @jwt_required(optional=True)
 def preview_pricing():
+    print("Entered preview_pricing")
     data = request.json or {}
     category = data.get("category")
     order_type = data.get("orderType")
