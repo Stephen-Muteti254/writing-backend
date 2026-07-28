@@ -61,7 +61,11 @@ def create_app(config_name=None):
         app,
         resources={r"/api/*": {"origins": origins}},
         supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization"],
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "X-CSRF-TOKEN",
+        ],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     )
 

@@ -19,7 +19,9 @@ class Config:
 
     JWT_COOKIE_SECURE = os.getenv("JWT_COOKIE_SECURE", "False") == "True"
 
-    JWT_COOKIE_HTTPONLY = os.getenv("JWT_COOKIE_HTTPONLY", True)
+    JWT_COOKIE_HTTPONLY = (
+        os.getenv("JWT_COOKIE_HTTPONLY", "True") == "True"
+    )
 
     JWT_COOKIE_SAMESITE = os.getenv("JWT_COOKIE_SAMESITE", "Lax")
 
