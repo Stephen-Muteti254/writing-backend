@@ -31,6 +31,17 @@ class Config:
 
     JWT_COOKIE_DOMAIN = os.getenv("JWT_COOKIE_DOMAIN")
 
+    JWT_COOKIE_CSRF_PROTECT = True
+
+    JWT_ACCESS_COOKIE_NAME = "access_token_cookie"
+    JWT_REFRESH_COOKIE_NAME = "refresh_token_cookie"
+
+    JWT_ACCESS_CSRF_COOKIE_NAME = "csrf_access_token"
+    JWT_REFRESH_CSRF_COOKIE_NAME = "csrf_refresh_token"
+
+    JWT_ACCESS_CSRF_HEADER_NAME = "X-CSRF-TOKEN"
+    JWT_REFRESH_CSRF_HEADER_NAME = "X-CSRF-TOKEN"
+
     SQLALCHEMY_DATABASE_URI = (
         f"{os.getenv('DATABASE_URL')}"
         f"?sslmode=verify-full"

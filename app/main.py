@@ -42,6 +42,30 @@ def create_app(config_name=None):
     jwt.init_app(app)
     ma.init_app(app)
 
+    # -----------------------------
+    # JWT Debug Callbacks
+    # -----------------------------
+
+    @jwt.invalid_token_loader
+    def invalid_token(reason):
+        print("INVALID TOKEN:", reason)
+        return jsonify(msg=reason), 401
+
+    @jwt.unauthorized_loader
+    def missing_token(reason):
+        print("UNAUTHORIZED:", reason)
+        return jsonify(msg=reason), 401
+
+    @jwt.revoked_token_loader
+    def revoked(jwt_header, jwt_payload):
+        print("REVOKED")
+        return jsonify(msg="revoked"), 401
+
+    @jwt.expired_token_loader
+    def expired(jwt_header, jwt_payload):
+        print("EXPIRED")
+        return jsonify(msg="expired"), 401
+
 
     # parse env list for dev (localhost) and prod
     origins = [o.strip() for o in app.config["CORS_ORIGINS"].split(",")]
@@ -71,6 +95,18 @@ def create_app(config_name=None):
 
     bcrypt.init_app(app)
     # limiter.init_app(app)
+
+    print("CONFIG DEBUG PRINTS START")
+
+    print(app.config["JWT_COOKIE_CSRF_PROTECT"])
+    print(app.config["JWT_ACCESS_CSRF_HEADER_NAME"])
+    print(app.config["JWT_ACCESS_CSRF_COOKIE_NAME"])
+    print(app.config["JWT_COOKIE_SECURE"])
+    print(app.config["JWT_COOKIE_SAMESITE"])
+
+    print(app.config["JWT_ACCESS_COOKIE_NAME"])
+    print(app.config["JWT_REFRESH_COOKIE_NAME"])
+    print("CONFIG DEBUG PRINTS END")
 
     # register blueprints
     from app.routes.auth_routes import bp as auth_bp
