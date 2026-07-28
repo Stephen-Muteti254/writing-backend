@@ -151,15 +151,12 @@ def verify_login_otp():
 
 
 @bp.route("/logout", methods=["POST"])
-@jwt_required()
+@jwt_required(optional=True)
 def logout():
-
     response, status = success_response({
         "message": "Successfully logged out"
     })
-
     unset_jwt_cookies(response)
-
     return response, status
 
 @bp.route("/me", methods=["GET"])
